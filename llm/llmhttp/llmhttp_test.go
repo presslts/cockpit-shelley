@@ -1,6 +1,7 @@
 package llmhttp
 
 import (
+	"encoding/json"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -10,6 +11,61 @@ import (
 
 	"shelley.exe.dev/llm"
 )
+
+func TestPrepareOpenRouterCachingForProviderFamilies(t *testing.T) {
+	tests := []struct {
+		name          string
+		model         string
+		messages      string
+		wantCacheHint bool
+		wantBlockMark bool
+	}{
+		{name: "anthropic automatic cache", model: "anthropic/claude-opus", messages: `[{"role":"user","content":"continue"}]`, wantCacheHint: true},
+		{name: "automatic provider gets session only", model: "deepseek/deepseek-v4-flash", messages: `[{"role":"user","content":"continue"}]`},
+		{name: "explicit cache provider gets breakpoint", model: "qwen/qwen3-max", messages: `[{"role":"user","content":"continue"}]`, wantBlockMark: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			body := `{"model":"` + tt.model + `","messages":` + tt.messages + `}`
+			req, err := http.NewRequest(http.MethodPost, "https://openrouter.ai/api/v1/chat/completions", strings.NewReader(body))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := prepareOpenRouterCaching(req, "conversation-123"); err != nil {
+				t.Fatal(err)
+			}
+			updated, err := io.ReadAll(req.Body)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var payload struct {
+				SessionID    string          `json:"session_id"`
+				CacheControl json.RawMessage `json:"cache_control"`
+				Messages     []struct {
+					Content json.RawMessage `json:"content"`
+				} `json:"messages"`
+			}
+			if err := json.Unmarshal(updated, &payload); err != nil {
+				t.Fatal(err)
+			}
+			if payload.SessionID == "" || payload.SessionID == "conversation-123" {
+				t.Errorf("session_id = %q, want stable opaque session id", payload.SessionID)
+			}
+			if got := len(payload.CacheControl) > 0; got != tt.wantCacheHint {
+				t.Errorf("top-level cache_control present = %v, want %v", got, tt.wantCacheHint)
+			}
+			if tt.wantBlockMark {
+				var blocks []map[string]json.RawMessage
+				if err := json.Unmarshal(payload.Messages[0].Content, &blocks); err != nil {
+					t.Fatal(err)
+				}
+				if len(blocks) != 1 || len(blocks[0]["cache_control"]) == 0 {
+					t.Errorf("content = %s, want one cache-marked text block", payload.Messages[0].Content)
+				}
+			}
+		})
+	}
+}
 
 func requireIdleStall(t *testing.T, err error) llm.RequestErrorInfo {
 	t.Helper()

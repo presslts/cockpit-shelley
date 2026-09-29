@@ -4,13 +4,17 @@
 package llmhttp
 
 import (
+	"bytes"
 	"context"
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 
@@ -181,6 +185,9 @@ func (t *Transport) RoundTrip(req *http.Request) (*http.Response, error) {
 			req.Header.Set("x-session-affinity", conversationID)
 		}
 	}
+	if err := prepareOpenRouterCaching(req, ConversationIDFromContext(req.Context())); err != nil {
+		return nil, err
+	}
 
 	base := t.Base
 	if base == nil {
@@ -224,6 +231,139 @@ func (t *Transport) RoundTrip(req *http.Request) (*http.Response, error) {
 		cancel:     cancel,
 	}
 	return resp, nil
+}
+
+// prepareOpenRouterCaching gives OpenRouter a stable session key and sends
+// explicit cache hints only for model families that need them. OpenRouter
+// enables prefix caching automatically for many other providers; session_id
+// keeps those requests on the same provider during a Shelley conversation.
+func prepareOpenRouterCaching(req *http.Request, conversationID string) error {
+	if req.URL.Hostname() != "openrouter.ai" || req.Method != http.MethodPost {
+		return nil
+	}
+	path := strings.TrimSuffix(req.URL.Path, "/")
+	if !strings.HasSuffix(path, "/chat/completions") && !strings.HasSuffix(path, "/responses") {
+		return nil
+	}
+	if req.Body == nil {
+		return nil
+	}
+
+	body, err := io.ReadAll(req.Body)
+	if err != nil {
+		return fmt.Errorf("read OpenRouter request for cache settings: %w", err)
+	}
+	_ = req.Body.Close()
+	var payload map[string]json.RawMessage
+	if err := json.Unmarshal(body, &payload); err != nil {
+		return fmt.Errorf("decode OpenRouter request for cache settings: %w", err)
+	}
+	if conversationID != "" {
+		if _, exists := payload["session_id"]; !exists {
+			sum := sha256.Sum256([]byte(conversationID))
+			sessionID, _ := json.Marshal("shelley-" + hex.EncodeToString(sum[:]))
+			payload["session_id"] = sessionID
+		}
+	}
+
+	var requestModel string
+	if err := json.Unmarshal(payload["model"], &requestModel); err != nil {
+		return fmt.Errorf("decode OpenRouter model for cache settings: %w", err)
+	}
+	model := strings.TrimPrefix(strings.ToLower(requestModel), "~")
+	switch {
+	case strings.HasPrefix(model, "anthropic/"):
+		// OpenRouter's automatic Claude caching advances this boundary with
+		// the conversation and also translates it for Bedrock and Vertex.
+		if _, exists := payload["cache_control"]; !exists {
+			payload["cache_control"] = json.RawMessage(`{"type":"ephemeral"}`)
+		}
+	case explicitOpenRouterCacheModel(model) && strings.HasSuffix(path, "/chat/completions"):
+		// These OpenRouter models require a content breakpoint. The shared
+		// Shelley loop already puts its cache boundary on the latest user turn.
+		messages, err := addOpenRouterCacheBreakpoint(payload["messages"])
+		if err != nil {
+			return err
+		}
+		if messages != nil {
+			payload["messages"] = messages
+		}
+	}
+
+	updated, err := json.Marshal(payload)
+	if err != nil {
+		return fmt.Errorf("encode OpenRouter cache settings: %w", err)
+	}
+	req.Body = io.NopCloser(bytes.NewReader(updated))
+	req.ContentLength = int64(len(updated))
+	req.GetBody = func() (io.ReadCloser, error) {
+		return io.NopCloser(bytes.NewReader(updated)), nil
+	}
+	return nil
+}
+
+func explicitOpenRouterCacheModel(model string) bool {
+	switch {
+	case model == "deepseek/deepseek-v3.2":
+		return true
+	case strings.HasPrefix(model, "qwen/qwen3-max"),
+		strings.HasPrefix(model, "qwen/qwen-plus"),
+		strings.HasPrefix(model, "qwen/qwen3.6-plus"),
+		strings.HasPrefix(model, "qwen/qwen3-coder-plus"),
+		strings.HasPrefix(model, "qwen/qwen3-coder-flash"):
+		return true
+	default:
+		return false
+	}
+}
+
+func addOpenRouterCacheBreakpoint(rawMessages json.RawMessage) (json.RawMessage, error) {
+	var messages []map[string]json.RawMessage
+	if err := json.Unmarshal(rawMessages, &messages); err != nil {
+		return nil, fmt.Errorf("decode OpenRouter messages for cache breakpoint: %w", err)
+	}
+	for i := len(messages) - 1; i >= 0; i-- {
+		var role string
+		if err := json.Unmarshal(messages[i]["role"], &role); err != nil || role != "user" {
+			continue
+		}
+		content := messages[i]["content"]
+		if len(content) == 0 {
+			return nil, nil
+		}
+		var text string
+		if err := json.Unmarshal(content, &text); err == nil {
+			block := map[string]any{"type": "text", "text": text, "cache_control": map[string]string{"type": "ephemeral"}}
+			encoded, err := json.Marshal([]any{block})
+			if err != nil {
+				return nil, fmt.Errorf("encode OpenRouter cache breakpoint: %w", err)
+			}
+			messages[i]["content"] = encoded
+		} else {
+			var blocks []map[string]json.RawMessage
+			if err := json.Unmarshal(content, &blocks); err != nil {
+				return nil, fmt.Errorf("decode OpenRouter message content for cache breakpoint: %w", err)
+			}
+			for j := len(blocks) - 1; j >= 0; j-- {
+				var kind string
+				if err := json.Unmarshal(blocks[j]["type"], &kind); err == nil && kind == "text" {
+					blocks[j]["cache_control"] = json.RawMessage(`{"type":"ephemeral"}`)
+					encoded, err := json.Marshal(blocks)
+					if err != nil {
+						return nil, fmt.Errorf("encode OpenRouter message content for cache breakpoint: %w", err)
+					}
+					messages[i]["content"] = encoded
+					break
+				}
+			}
+		}
+		encoded, err := json.Marshal(messages)
+		if err != nil {
+			return nil, fmt.Errorf("encode OpenRouter messages for cache breakpoint: %w", err)
+		}
+		return encoded, nil
+	}
+	return nil, nil
 }
 
 // idleWatchdog cancels a request's context if no progress is reported within
