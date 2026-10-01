@@ -30,7 +30,7 @@
       <ConversationDrawer
         :is-open="drawerOpen"
         :is-collapsed="drawerCollapsed"
-        :conversations="conversations"
+        :conversations="visibleConversations"
         :ephemeral-terminals="ephemeralTerminals"
         :current-conversation-id="currentConversationId"
         :viewed-conversation="viewedConversation"
@@ -68,7 +68,7 @@
           :open-terminal-trigger="terminalTrigger"
           :models-refresh-trigger="modelsRefreshTrigger"
           :cwd-sync-trigger="cwdSyncTrigger"
-          :on-open-models-modal="() => (modelsModalOpen = true)"
+          :on-open-models-modal="() => { if (!isEmbeddedShelley()) modelsModalOpen = true; }"
           :on-open-file-finder="openFileFinder"
           :on-open-command-palette="() => (commandPaletteOpen = true)"
           :ephemeral-terminals="ephemeralTerminals"
@@ -135,7 +135,7 @@
         @open-file-finder="openFileFinder"
         @open-models-modal="
           () => {
-            modelsModalOpen = true;
+            if (!isEmbeddedShelley()) modelsModalOpen = true;
             commandPaletteOpen = false;
           }
         "
@@ -158,6 +158,7 @@
       />
 
       <ModelsModal
+        v-if="!isEmbeddedShelley()"
         :is-open="modelsModalOpen"
         @close="
           () => {
@@ -253,6 +254,10 @@ import { provideOpenFileEditor } from "./composables/fileEditor";
 import { useFeatureFlag } from "./composables/featureFlags";
 import { useMobileDrawerSwipe } from "./composables/mobileDrawerSwipe";
 import PerfHud from "./components/PerfHud.vue";
+import { shelleyFetch, pluginStorageKey } from "../services/network";
+
+const fetch = shelleyFetch;
+const isEmbeddedShelley = () => window.__SHELLEY_INIT__?.presslts_embedded === true;
 
 const perfHudEnabled = useFeatureFlag("performance-hud");
 
@@ -264,6 +269,10 @@ function isGeneratedId(slug: string | null): boolean {
   return /^c[a-z0-9]+$/i.test(slug);
 }
 function getSlugFromPath(): string | null {
+  if (isEmbeddedShelley()) {
+    const chat = new URLSearchParams(window.location.search).get("chat");
+    return chat === "new" ? null : chat;
+  }
   const path = window.location.pathname;
   if (path.startsWith("/c/")) {
     const slug = path.slice(3);
@@ -272,6 +281,7 @@ function getSlugFromPath(): string | null {
   return null;
 }
 function isNewPath(): boolean {
+  if (isEmbeddedShelley()) return new URLSearchParams(window.location.search).get("chat") === "new";
   return window.location.pathname === "/new";
 }
 
@@ -289,6 +299,12 @@ const initialSlugFromUrl = getSlugFromPath();
 const initialIsNew = isNewPath() || (!getSlugFromPath() && hasPendingNewDraft());
 
 function updateUrlWithSlug(conversation: Conversation | undefined) {
+  if (isEmbeddedShelley()) {
+    const target = new URL(window.location.href);
+    target.searchParams.set("chat", conversation?.conversation_id ?? "new");
+    window.history.replaceState(window.history.state, "", target);
+    return;
+  }
   const currentSlug = getSlugFromPath();
   let newSlug: string | null = null;
   if (conversation?.slug && !isGeneratedId(conversation.slug)) {
@@ -303,6 +319,7 @@ function updateUrlWithSlug(conversation: Conversation | undefined) {
 }
 
 function updatePageTitle(conversation: Conversation | undefined) {
+  if (isEmbeddedShelley()) return;
   const hostname = window.__SHELLEY_INIT__?.hostname;
   const parts: string[] = [];
   if (conversation?.slug && !isGeneratedId(conversation.slug)) parts.push(conversation.slug);
@@ -316,9 +333,17 @@ const banner = window.__SHELLEY_INIT__?.banner;
 // ---- state ----
 const conversations = ref<ConversationWithState[]>([]);
 const currentConversationId = ref<string | null>(null);
+const pluginRoot = window.__SHELLEY_INIT__?.presslts_plugin_root || "";
+function isPluginConversation(conversation: ConversationWithState | Conversation): boolean {
+	if (window.__SHELLEY_INIT__?.presslts_plugin_id) return true;
+  if (!pluginRoot) return true;
+  const cwd = conversation.cwd ?? "";
+  return cwd === pluginRoot || cwd.startsWith(`${pluginRoot}/`);
+}
+const visibleConversations = computed(() => conversations.value.filter(isPluginConversation));
 // Subagent tool widgets (SubagentTool.vue) join their slug against the live
 // conversation list to show what the subagent is doing right now.
-provide(ConversationsListKey, conversations);
+provide(ConversationsListKey, visibleConversations);
 provide(CurrentConversationIdKey, currentConversationId);
 const viewedConversation = ref<Conversation | null>(null);
 const drawerOpen = ref(false);
@@ -364,6 +389,21 @@ let initialSlugResolved = false;
 let conversationListHash: string | null = null;
 let globalStreamHandle: { forceReconnect: () => void; close: () => void } | null = null;
 
+function handlePressLTSMessage(event: MessageEvent) {
+  if (event.source !== window.parent || event.data?.source !== "presslts") return;
+  if (event.data.type !== "cancel-current" || !currentConversationId.value) return;
+  void api.cancelConversation(currentConversationId.value).catch((err) =>
+    console.warn("failed to cancel current Shelley conversation:", err),
+  );
+}
+
+function handlePressLTSCancel() {
+  if (!currentConversationId.value) return;
+  void api.cancelConversation(currentConversationId.value).catch((err) =>
+    console.warn("failed to cancel current Shelley conversation:", err),
+  );
+}
+
 // setEphemeralTerminals supports both array and updater-function forms (parity
 // with React's setState) so ChatInterface can call it like the React prop.
 function setEphemeralTerminals(
@@ -397,11 +437,11 @@ function handleTerminalClose(id: string) {
 
 // ---- derived ----
 const topLevelConversations = computed(() =>
-  conversations.value.filter((c) => !c.parent_conversation_id),
+  visibleConversations.value.filter((c) => !c.parent_conversation_id),
 );
 
 const currentConversation = computed<ConversationWithState | undefined>(() => {
-  const found = conversations.value.find(
+  const found = visibleConversations.value.find(
     (conv) => conv.conversation_id === currentConversationId.value,
   );
   if (found) return found;
@@ -427,7 +467,7 @@ const commandPaletteHasCwd = computed(
     !!(
       currentConversation.value?.cwd ||
       mostRecentCwd.value ||
-      localStorage.getItem("shelley_selected_cwd") ||
+      localStorage.getItem(pluginStorageKey("shelley_selected_cwd")) ||
       window.__SHELLEY_INIT__?.default_cwd
     ),
 );
@@ -438,7 +478,7 @@ const finderDir = computed(
   () =>
     currentConversation.value?.cwd ||
     mostRecentCwd.value ||
-    localStorage.getItem("shelley_selected_cwd") ||
+    localStorage.getItem(pluginStorageKey("shelley_selected_cwd")) ||
     window.__SHELLEY_INIT__?.default_cwd ||
     "",
 );
@@ -540,7 +580,7 @@ async function resolveInitialSlug(convs: Conversation[]): Promise<Conversation |
   } catch (err) {
     console.error("Failed to resolve slug:", err);
   }
-  window.history.replaceState({}, "", "/");
+    if (!isEmbeddedShelley()) window.history.replaceState({}, "", "/");
   return null;
 }
 
@@ -557,9 +597,10 @@ async function loadConversations() {
       commitListState({ list: snapshot.conversations, hash: snapshot.hash });
     }
     const currentList = streamHash ? conversations.value : snapshot.conversations;
-    const topLevel = currentList.filter((c) => !c.parent_conversation_id);
+    const visibleList = currentList.filter(isPluginConversation);
+    const topLevel = visibleList.filter((c) => !c.parent_conversation_id);
 
-    const slugConv = await resolveInitialSlug(currentList);
+    const slugConv = await resolveInitialSlug(visibleList);
     if (slugConv) {
       currentConversationId.value = slugConv.conversation_id;
       viewedConversation.value = slugConv;
@@ -578,25 +619,27 @@ async function loadConversations() {
 // ---- conversation actions ----
 function startNewConversation() {
   if (currentConversation.value?.cwd) {
-    localStorage.setItem("shelley_selected_cwd", currentConversation.value.cwd);
+    localStorage.setItem(pluginStorageKey("shelley_selected_cwd"), currentConversation.value.cwd);
   }
   currentConversationId.value = null;
   viewedConversation.value = null;
-  window.history.replaceState({}, "", "/new");
+  if (!isEmbeddedShelley()) window.history.replaceState({}, "", "/new");
   drawerOpen.value = false;
 }
 
 function startNewConversationWithCwd(cwd: string) {
-  localStorage.setItem("shelley_selected_cwd", cwd);
+  if (pluginRoot && cwd !== pluginRoot && !cwd.startsWith(`${pluginRoot}/`)) return;
+  localStorage.setItem(pluginStorageKey("shelley_selected_cwd"), cwd);
   currentConversationId.value = null;
   viewedConversation.value = null;
-  window.history.replaceState({}, "", "/new");
+  if (!isEmbeddedShelley()) window.history.replaceState({}, "", "/new");
   drawerOpen.value = false;
   cwdSyncTrigger.value++;
 }
 
 function setConversationCwd(cwd: string) {
-  localStorage.setItem("shelley_selected_cwd", cwd);
+  if (pluginRoot && cwd !== pluginRoot && !cwd.startsWith(`${pluginRoot}/`)) return;
+  localStorage.setItem(pluginStorageKey("shelley_selected_cwd"), cwd);
   const conv =
     conversations.value.find((c) => c.conversation_id === currentConversationId.value) ||
     (viewedConversation.value?.conversation_id === currentConversationId.value
@@ -841,7 +884,7 @@ async function handlePopState() {
   }
   const slug = getSlugFromPath();
   if (!slug) return;
-  const existingConv = conversations.value.find(
+  const existingConv = visibleConversations.value.find(
     (c) => c.slug === slug || c.conversation_id === slug,
   );
   if (existingConv) {
@@ -929,6 +972,8 @@ onMounted(() => {
 
   document.addEventListener("keydown", handleKeyDown);
   window.addEventListener("popstate", handlePopState);
+  window.addEventListener("message", handlePressLTSMessage);
+  window.addEventListener("shelley:cancel-current", handlePressLTSCancel);
 });
 
 let terminalsHydrationCancel: (() => void) | null = null;
@@ -939,6 +984,8 @@ onUnmounted(() => {
   globalStreamHandle = null;
   document.removeEventListener("keydown", handleKeyDown);
   window.removeEventListener("popstate", handlePopState);
+  window.removeEventListener("message", handlePressLTSMessage);
+  window.removeEventListener("shelley:cancel-current", handlePressLTSCancel);
   clearChord();
 });
 </script>

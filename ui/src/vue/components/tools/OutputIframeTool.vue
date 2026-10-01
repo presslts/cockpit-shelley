@@ -131,6 +131,9 @@ import JSZip from "jszip";
 import type { LLMContent } from "../../../types";
 import ToolChevron from "./ToolChevron.vue";
 import ToolStatusIcon from "./ToolStatusIcon.vue";
+import { shelleyFetch } from "../../../services/network";
+
+const fetch = shelleyFetch;
 
 interface EmbeddedFile {
   name: string;
@@ -340,7 +343,7 @@ function handleIframeLoad() {
       const libPath = LIBRARY_PATHS[name];
       if (!libPath) continue;
       try {
-        const resp = await fetch(libPath, { credentials: "same-origin" });
+        const resp = await fetch(libPath, { credentials: "include" });
         if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
         libs[name] = await resp.text();
       } catch (e) {
@@ -359,7 +362,7 @@ async function inlineLibrariesIntoHtml(baseHtml: string): Promise<string> {
   for (const name of libraries.value) {
     const libPath = LIBRARY_PATHS[name];
     if (!libPath) continue;
-    const resp = await fetch(libPath, { credentials: "same-origin" });
+    const resp = await fetch(libPath, { credentials: "include" });
     if (!resp.ok) throw new Error(`fetch ${libPath}: HTTP ${resp.status}`);
     const text = await resp.text();
     const bytes = enc.encode(text);

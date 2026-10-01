@@ -12,6 +12,9 @@ import {
   VersionInfo,
   CommitInfo,
 } from "../types";
+import { shelleyFetch, shelleyURL } from "./network";
+
+const fetch = shelleyFetch;
 
 // Extract a useful error message from a failed fetch response. Prefers the
 // response body (which may contain a server-side detail like a hook error),
@@ -86,7 +89,9 @@ export interface BtwSummaryReceipt {
 }
 
 class ApiService {
-  private baseUrl = "/api";
+  private get baseUrl() {
+    return shelleyURL("/api");
+  }
 
   private postHeaders = {
     "Content-Type": "application/json",
@@ -379,7 +384,8 @@ class ApiService {
       params.set("conversation_list_hash", opts.conversationListHash);
     }
     const query = params.toString();
-    return new EventSource(`${this.baseUrl}/stream2${query ? `?${query}` : ""}`);
+    const url = `${this.baseUrl}/stream2${query ? `?${query}` : ""}`;
+    return new EventSource(url, { withCredentials: Boolean(window.__SHELLEY_INIT__?.base_url) });
   }
 
   // forkConversation creates a new conversation that copies all messages from
@@ -1033,7 +1039,9 @@ export interface TestCustomModelRequest {
 }
 
 class CustomModelsApi {
-  private baseUrl = "/api";
+  private get baseUrl() {
+    return shelleyURL("/api");
+  }
 
   private postHeaders = {
     "Content-Type": "application/json",
@@ -1150,7 +1158,9 @@ export interface ChannelTypeInfo {
 }
 
 class NotificationChannelsApi {
-  private baseUrl = "/api";
+  private get baseUrl() {
+    return shelleyURL("/api");
+  }
 
   private postHeaders = {
     "Content-Type": "application/json",

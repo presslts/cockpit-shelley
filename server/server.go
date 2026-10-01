@@ -1913,7 +1913,7 @@ func (s *Server) StartWithListeners(tcpListener net.Listener, socketPath string)
 	s.RegisterRoutes(mux)
 
 	// TCP handler: full middleware (applied in reverse order: last added = first executed)
-	tcpHandler := LoggerMiddleware(s.logger)(mux)
+	tcpHandler := LoggerMiddleware(s.logger)(cockpitHandler(s.cockpitConversationHandler(mux)))
 	cop := http.NewCrossOriginProtection()
 	tcpHandler = cop.Handler(tcpHandler)
 	if s.requireHeader != "" {
@@ -1937,7 +1937,10 @@ func (s *Server) StartWithListeners(tcpListener net.Listener, socketPath string)
 	go s.autoUpgradeRoutine()
 
 	// Get actual port from listener
-	actualPort := tcpListener.Addr().(*net.TCPAddr).Port
+	actualPort := 0
+	if address, ok := tcpListener.Addr().(*net.TCPAddr); ok {
+		actualPort = address.Port
+	}
 	s.listenPort = actualPort
 
 	// Start TCP server in goroutine
@@ -1979,7 +1982,7 @@ func (s *Server) StartWithListeners(tcpListener net.Listener, socketPath string)
 		}
 
 		// Unix socket handler: relaxed middleware (only logger, no CSRF or requireHeader)
-		socketHandler := LoggerMiddleware(s.logger)(mux)
+		socketHandler := LoggerMiddleware(s.logger)(cockpitHandler(s.cockpitConversationHandler(mux)))
 
 		socketServer = &http.Server{
 			Handler: socketHandler,

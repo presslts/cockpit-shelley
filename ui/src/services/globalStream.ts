@@ -24,6 +24,7 @@ import type {
 } from "../types";
 import { api } from "./api";
 import { messageStore } from "./messageStore";
+import { shelleyFetch } from "./network";
 
 export type StreamStatus = "connected" | "reconnecting" | "disconnected";
 
@@ -50,9 +51,9 @@ async function probeAuthentication(): Promise<boolean> {
   // exe.dev turns an unauthenticated request into a same-origin login
   // redirect. Manual redirects surface to fetch as an opaque response, while
   // an authenticated Shelley answers this cheap capability probe directly.
-  const response = await fetch("/api/upload/raw", {
+  const response = await shelleyFetch("/api/upload/raw", {
     cache: "no-store",
-    credentials: "same-origin",
+    credentials: "include",
     redirect: "manual",
   });
   return response.type === "opaqueredirect" || response.status === 401;
@@ -210,6 +211,29 @@ export function connectGlobalStream({
 
     const convId = data.conversation_id;
     if (!convId) return;
+
+    // The PressLTS cockpit embeds Shelley beside its plugin files and diff
+    // view. Notify that host of the authoritative working state instead of
+    // making the host recreate Shelley's conversation state machine.
+    if (data.conversation_state && window.__SHELLEY_INIT__?.presslts_embedded) {
+      window.dispatchEvent(new CustomEvent("shelley:conversation-state", {
+        detail: {
+          conversation_id: convId,
+          working: data.conversation_state.working,
+        },
+      }));
+    }
+    if (data.conversation_state && window.parent !== window) {
+      window.parent.postMessage(
+        {
+          source: "shelley",
+          type: "conversation-state",
+          conversation_id: convId,
+          working: data.conversation_state.working,
+        },
+        "*",
+      );
+    }
 
     // Persistent state
     if (data.messages && data.messages.length > 0) {

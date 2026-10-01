@@ -13,6 +13,9 @@
 
 import { cacheDiag } from "./cacheDiag";
 import { withDeadline, isDeadlineExceeded } from "./deadline";
+import { shelleyFetch } from "./network";
+
+const fetch = shelleyFetch;
 
 export interface CacheKeyMaterial {
   keyId: string;

@@ -185,6 +185,7 @@ import { isDarkModeActive } from "../../services/theme";
 import TerminalInstance from "./TerminalInstance.vue";
 import type { TermStatus } from "./terminalHelpers";
 import { nextActiveTab, visibleTerminals } from "./terminalHelpers";
+import { shelleyFetch } from "../../services/network";
 import type { EphemeralTerminal } from "./terminalTypes";
 import CopyIcon from "./terminalIcons/CopyIcon.vue";
 import CopyAllIcon from "./terminalIcons/CopyAllIcon.vue";
@@ -195,6 +196,8 @@ import CloseIcon from "./terminalIcons/CloseIcon.vue";
 import ChevronUpIcon from "./terminalIcons/ChevronUpIcon.vue";
 import ChevronDownIcon from "./terminalIcons/ChevronDownIcon.vue";
 import PinIcon from "./terminalIcons/PinIcon.vue";
+
+const fetch = shelleyFetch;
 
 // Re-export EphemeralTerminal so importers can keep importing it from this
 // module (the canonical definition lives in terminalTypes.ts).

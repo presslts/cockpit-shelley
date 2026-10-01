@@ -64,6 +64,7 @@ func registerGlobalFlags(fs *flag.FlagSet, global *GlobalConfig) {
 }
 
 func main() {
+	configureCockpitTransport()
 	// Define global flags
 	var global GlobalConfig
 	registerGlobalFlags(flag.CommandLine, &global)

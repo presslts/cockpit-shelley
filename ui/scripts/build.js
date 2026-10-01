@@ -21,7 +21,7 @@ function monacoExternalPlugin() {
     name: "monaco-external",
     setup(build) {
       build.onResolve({ filter: /^monaco-editor(\/|$)/ }, () => ({
-        path: "/monaco-editor.js",
+        path: "./monaco-editor.js",
         external: true,
       }));
       const monacoVimEsm = path.resolve(process.cwd(), "node_modules/monaco-vim/dist/index.mjs");
@@ -151,6 +151,28 @@ async function build() {
       plugins: [monacoExternalPlugin(), vuePlugin()],
     });
 
+    // The embedded entry mounts the same Vue application into a host-owned
+    // element. It is a real module, not an iframe or a second UI implementation.
+    log("Building embedded application (src/vue/embedded.ts)...");
+    await esbuild.build({
+      entryPoints: ["src/vue/embedded.ts"],
+      bundle: true,
+      outfile: "dist/embedded.js",
+      format: "esm",
+      minify: isProd,
+      sourcemap: !noSourceMaps,
+      external: ["monaco-editor", "/monaco-editor.js"],
+      loader: {
+        ".png": "dataurl",
+        ".svg": "text",
+        ".woff": "dataurl",
+        ".woff2": "dataurl",
+        ".ttf": "dataurl",
+        ".eot": "dataurl",
+      },
+      plugins: [monacoExternalPlugin(), vuePlugin()],
+    });
+
     // /static/excalidraw/skill.js: self-contained Excalidraw + React +
     // skill helper bundle. The host React app fetches it same-origin and
     // streams it into the sandboxed `output_iframe` iframe via
@@ -241,6 +263,8 @@ async function build() {
       "monaco-editor.css",
       "styles.css",
       "main.js",
+      "embedded.js",
+      "embedded.css",
       "main.css",
       "static/excalidraw/skill.js",
     ];

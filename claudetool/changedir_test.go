@@ -7,6 +7,32 @@ import (
 	"testing"
 )
 
+func TestChangeDirCockpitBoundary(t *testing.T) {
+	root, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	outside, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(outside, filepath.Join(root, "escape")); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PRESSLTS_PLUGIN_ROOT", root)
+	working := NewMutableWorkingDir(root)
+	tool := &ChangeDirTool{WorkingDir: working}
+	for _, path := range []string{"..", "/tmp", outside, "escape"} {
+		input, _ := json.Marshal(changeDirInput{Path: path})
+		if result := tool.Tool().Run(t.Context(), input); result.Error == nil {
+			t.Fatalf("accepted outside path %s", path)
+		}
+		if working.Get() != root {
+			t.Fatal("changed cockpit root after rejection")
+		}
+	}
+}
+
 func TestChangeDirTool(t *testing.T) {
 	// Create a temp directory structure
 	tmpDir := t.TempDir()

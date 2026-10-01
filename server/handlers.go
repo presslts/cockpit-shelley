@@ -695,6 +695,11 @@ func (s *Server) serveIndexWithInit(w http.ResponseWriter, r *http.Request, fs h
 	// the usual cause is a missing reflection or llm integration, and each has
 	// a different fix; see modelSetupHintForModels. Only computed for the empty
 	// case, so the healthy path pays no reflection probe.
+	if pluginID := os.Getenv("PRESSLTS_PLUGIN_ID"); pluginID != "" {
+		initData["base_url"] = "/shelley/" + pluginID
+		initData["presslts_plugin_id"] = pluginID
+		initData["presslts_plugin_root"] = os.Getenv("PRESSLTS_PLUGIN_ROOT")
+	}
 	if hint := modelSetupHintForModels(r.Context(), modelList, isExeDev()); hint != "" {
 		initData["model_setup_hint"] = hint
 	}
@@ -749,6 +754,11 @@ func (s *Server) serveIndexWithInit(w http.ResponseWriter, r *http.Request, fs h
 	initScript := fmt.Sprintf(`<script>window.__SHELLEY_INIT__=%s;</script>`, initJSON)
 	injection := faviconLink + initScript
 	modifiedHTML := strings.Replace(string(indexHTML), "</head>", injection+"</head>", 1)
+	if pluginID := os.Getenv("PRESSLTS_PLUGIN_ID"); pluginID != "" {
+		prefix := "/shelley/" + pluginID + "/"
+		modifiedHTML = strings.ReplaceAll(modifiedHTML, `src="/`, `src="`+prefix)
+		modifiedHTML = strings.ReplaceAll(modifiedHTML, `href="/`, `href="`+prefix)
+	}
 
 	w.Write([]byte(modifiedHTML))
 }

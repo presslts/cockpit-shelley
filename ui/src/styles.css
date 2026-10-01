@@ -3,13 +3,13 @@
   box-sizing: border-box;
 }
 
-html {
+html:not([data-presslts-embedded]) {
   height: 100%;
   height: 100dvh;
   overflow: hidden;
 }
 
-body {
+html:not([data-presslts-embedded]) body {
   margin: 0;
   height: 100%;
   overflow: hidden;
@@ -23,11 +23,24 @@ body {
 
 /* #root hosts the React tree. Make it a flex column so the top banner
    (when present) can sit at the top and push the app-container down. */
-#root {
+#root,
+.shelley-embedded-root {
   display: flex;
   flex-direction: column;
   height: 100%;
   min-height: 0;
+}
+
+/* Embedded Shelley owns only its mount box; the dashboard keeps its document
+   sizing and scroll policy. */
+.shelley-embedded-root {
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  font-family: var(--font-sans);
+  line-height: 1.6;
+  color: var(--text-primary);
+  background: var(--bg-secondary);
 }
 
 /* CSS Variables */
@@ -96,6 +109,15 @@ body {
   --gray-700: #374151;
   --gray-800: #1f2937;
   --gray-900: #111827;
+}
+
+/* PressLTS embeds Shelley beside the file workspace. Keep the agent's
+   controls recognizable while matching the cockpit's warm orange accent. */
+html[data-presslts-embedded] {
+  --primary: #ca6b43;
+  --primary-dark: #a85432;
+  --user-message-text: #ca6b43;
+  --link-color: #ca6b43;
 }
 
 .dark {

@@ -2,6 +2,7 @@
 // service owns its one worker, de-duplicates requests, and bounds the source
 // cache because streaming markdown can produce many short-lived revisions.
 import { SHIKI_LANGUAGE_BY_LABEL } from "../generated-shiki-language-metadata";
+import { shelleyFetch, shelleyURL } from "./network";
 
 export { SHIKI_LANGUAGE_BY_LABEL };
 
@@ -36,6 +37,7 @@ const MAX_CACHE_ENTRIES = 128;
 const pending = new Map<number, PendingRequest>();
 const cache = new Map<string, Promise<HighlightResult>>();
 let worker: Worker | undefined;
+let workerLoad: Promise<Worker> | undefined;
 let nextRequestId = 1;
 
 export function normalizeCodeLanguage(language: string | undefined): string | undefined {
@@ -46,39 +48,69 @@ function cacheKey(language: string, source: string): string {
   return `${language}\0${source}`;
 }
 
-function getWorker(): Worker {
-  if (worker) return worker;
+function getWorker(): Promise<Worker> {
+  if (worker) return Promise.resolve(worker);
+  if (workerLoad) return workerLoad;
 
-  worker = new Worker("/markdown-highlight-worker.js");
-  worker.addEventListener("message", ({ data }: MessageEvent<HighlightResponse>) => {
-    const request = pending.get(data.id);
-    if (!request) return;
-    pending.delete(data.id);
-    if (data.kind === "error") {
-      request.reject(new Error(data.error));
-      return;
+  workerLoad = (async () => {
+    const scriptURL = shelleyURL("/markdown-highlight-worker.js");
+    let workerURL = scriptURL;
+    let blobURL: string | undefined;
+    if (new URL(scriptURL, location.href).origin !== location.origin) {
+      const response = await shelleyFetch(scriptURL);
+      if (!response.ok) throw new Error(`Syntax highlighter worker is unavailable (${response.status}).`);
+      blobURL = URL.createObjectURL(await response.blob());
+      workerURL = blobURL;
     }
-    if (data.kind === "unknown") {
-      request.resolve({ kind: "unknown" });
-      return;
+
+    try {
+      const nextWorker = new Worker(workerURL);
+      const releaseBlob = () => {
+        if (blobURL) URL.revokeObjectURL(blobURL);
+        blobURL = undefined;
+      };
+      nextWorker.addEventListener("message", ({ data }: MessageEvent<HighlightResponse>) => {
+        releaseBlob();
+        const request = pending.get(data.id);
+        if (!request) return;
+        pending.delete(data.id);
+        if (data.kind === "error") {
+          request.reject(new Error(data.error));
+          return;
+        }
+        if (data.kind === "unknown") {
+          request.resolve({ kind: "unknown" });
+          return;
+        }
+        request.resolve({ kind: "highlighted", lines: data.lines });
+      });
+      nextWorker.addEventListener("error", (event) => {
+        releaseBlob();
+        const error = new Error(`Syntax highlighter worker failed: ${event.message}`);
+        for (const request of pending.values()) request.reject(error);
+        pending.clear();
+        worker = undefined;
+        workerLoad = undefined;
+      });
+      worker = nextWorker;
+      return nextWorker;
+    } catch (error) {
+      if (blobURL) URL.revokeObjectURL(blobURL);
+      throw error;
     }
-    request.resolve({ kind: "highlighted", lines: data.lines });
+  })().catch((error: unknown) => {
+    workerLoad = undefined;
+    throw error;
   });
-  worker.addEventListener("error", (event) => {
-    const error = new Error(`Syntax highlighter worker failed: ${event.message}`);
-    for (const request of pending.values()) request.reject(error);
-    pending.clear();
-    worker = undefined;
-  });
-  return worker;
+  return workerLoad;
 }
 
 function requestHighlight(language: string, source: string): Promise<HighlightResult> {
   const id = nextRequestId++;
-  return new Promise<HighlightResult>((resolve, reject) => {
+  return getWorker().then((loadedWorker) => new Promise<HighlightResult>((resolve, reject) => {
     pending.set(id, { resolve, reject });
-    getWorker().postMessage({ id, language, source } satisfies HighlightRequest);
-  });
+    loadedWorker.postMessage({ id, language, source } satisfies HighlightRequest);
+  }));
 }
 
 // highlightCode returns a typed worker result. Callers normally pass a

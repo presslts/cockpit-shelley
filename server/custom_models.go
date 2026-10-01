@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"os"
 	"strings"
 	"time"
 
@@ -298,6 +299,9 @@ func (s *Server) handleGetModel(w http.ResponseWriter, r *http.Request, modelID 
 func (s *Server) handleUpdateModel(w http.ResponseWriter, r *http.Request, modelID string) {
 	// First, get the existing model to get the current API key if not provided
 	existing, err := s.db.GetModel(r.Context(), modelID)
+	if err != nil && os.Getenv("PRESSLTS_PLUGIN_ID") != "" {
+		existing, err = s.db.CreateModel(r.Context(), generated.CreateModelParams{ModelID: modelID, DisplayName: modelID, ProviderType: "openai", Endpoint: "https://openrouter.ai/api/v1", ApiKey: modelID, ModelName: modelID, ImageSupport: "auto", ReasoningSupport: "auto"})
+	}
 	if err != nil {
 		http.Error(w, fmt.Sprintf("Model not found: %v", err), http.StatusNotFound)
 		return

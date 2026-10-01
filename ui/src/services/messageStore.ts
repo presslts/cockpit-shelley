@@ -91,6 +91,7 @@ import { withDeadline, isDeadlineExceeded } from "./deadline";
 const ROTATE_CHANNEL = "shelley-cache-rotate";
 type RotateMsg = { type: "rotated" };
 
+import { pluginStorageKey } from "./network";
 const DEFAULT_DB_NAME = "shelley-messages";
 const DB_VERSION = 4;
 const DIRTY_CONVERSATION_PREFIX = "dirty:";
@@ -510,7 +511,7 @@ export class MessageStore {
   private rotateChannel: BroadcastChannel | null = null;
 
   constructor(opts: MessageStoreOptions = {}) {
-    this.dbName = opts.dbName ?? DEFAULT_DB_NAME;
+    this.dbName = opts.dbName ?? pluginStorageKey(DEFAULT_DB_NAME);
     this.factory = opts.factory ?? (typeof indexedDB !== "undefined" ? indexedDB : undefined);
     this.keyHolder = opts.keyHolder ?? new CacheKeyHolder(new HttpCacheKeyFetcher());
     this.openTimeoutMs = opts.openTimeoutMs ?? IDB_OPEN_TIMEOUT_MS;

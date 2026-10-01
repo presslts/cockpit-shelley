@@ -30,13 +30,14 @@
 //     has NO server-side draft, so its cache entry is authoritative: the
 //     caller reads `value` directly and ignores `basedOn` (stored as "").
 
+import { pluginStorageKey } from "./network";
 const PREFIX = "shelley-draft:";
 
 // localStorage key for a draft session. `null` is the special "new
 // conversation" session (no server id yet); a lazily-created draft migrates
 // its cache to the real id (see ChatInterface).
 function cacheKey(id: string | null): string {
-  return PREFIX + (id ?? "new");
+  return pluginStorageKey(PREFIX + (id ?? "new"));
 }
 
 export interface CachedDraft {

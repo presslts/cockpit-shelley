@@ -73,6 +73,7 @@
           :models="models"
           :selected-model="selectedModel"
           :thinking-level="thinkingLevel"
+          :catalog-actions="catalogActions"
           :disabled="agentWorking"
           :refreshing="refreshingModels"
           @select-model="onSwitchConversationModel"
@@ -119,6 +120,7 @@ const props = defineProps<{
 }>();
 
 const { t } = useI18n();
+const catalogActions = !window.__SHELLEY_INIT__?.presslts_embedded;
 
 // Undefined rather than "" when idle: v-tooltip treats an empty string as a
 // tooltip to render, and the ModelPicker prop is optional.

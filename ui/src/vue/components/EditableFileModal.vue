@@ -111,11 +111,14 @@ import { computed, onMounted, onUnmounted, ref, shallowRef, watch } from "vue";
 import type * as Monaco from "monaco-editor";
 import { loadMonaco } from "../../services/monaco";
 import { isDarkModeActive } from "../../services/theme";
+import { shelleyFetch } from "../../services/network";
 import { tildifyPath } from "../../utils/tildify";
 import { useVimEnabled, useMonacoVim } from "../composables/monacoVim";
 import { lineCommentLabel, useMonacoComments } from "../composables/monacoComments";
 import VimToggle from "./VimToggle.vue";
 import CommentDialog from "./CommentDialog.vue";
+
+const fetch = shelleyFetch;
 
 type SaveStatus = "idle" | "saving" | "saved" | "error";
 type LoadStatus = "loading" | "loaded" | "error";

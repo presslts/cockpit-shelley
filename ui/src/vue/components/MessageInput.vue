@@ -402,7 +402,10 @@ import {
   type ComposerSubmissionIntent,
 } from "./composerDispatch";
 import { isImeComposing } from "../../utils/imeComposing";
+import { shelleyFetch } from "../../services/network";
 import RecordingPanel from "./RecordingPanel.vue";
+
+const fetch = shelleyFetch;
 import {
   CONCRETE_THINKING_LEVELS,
   supportedThinkingLevels,

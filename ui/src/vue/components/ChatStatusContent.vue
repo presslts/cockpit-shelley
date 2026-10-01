@@ -77,6 +77,7 @@
         :models="models"
         :selected-model="selectedModel"
         :thinking-level="thinkingLevel"
+        :catalog-actions="catalogActions"
         :disabled="sending"
         :refreshing="refreshingModels"
         @select-model="onSelectModel"
@@ -253,6 +254,7 @@ const props = defineProps<{
 }>();
 
 const { t } = useI18n();
+const catalogActions = !window.__SHELLEY_INIT__?.presslts_embedded;
 
 // The conversation's cwd once saved, the picked one while it is still a draft.
 const cwd = computed(() => props.currentConversation?.cwd || props.selectedCwd);

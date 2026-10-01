@@ -524,6 +524,7 @@ import { computed, nextTick, onMounted, onUnmounted, ref, shallowRef, watch } fr
 import type * as Monaco from "monaco-editor";
 import { api, type GitTourResponse } from "../../services/api";
 import { loadMonaco } from "../../services/monaco";
+import { shelleyFetch } from "../../services/network";
 import { isDarkModeActive } from "../../services/theme";
 import { buildTourCommentBlock, type TourCommentTarget } from "../composables/tourComments";
 import { useVimEnabled, useMonacoVim } from "../composables/monacoVim";
@@ -534,6 +535,8 @@ import {
 } from "../composables/monacoComments";
 import VimToggle from "./VimToggle.vue";
 import CommentDialog from "./CommentDialog.vue";
+
+const fetch = shelleyFetch;
 import CommitTourView from "./CommitTourView.vue";
 import CommitPicker from "./CommitPicker.vue";
 import RangeToggle from "./RangeToggle.vue";

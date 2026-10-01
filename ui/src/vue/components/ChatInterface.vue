@@ -62,6 +62,7 @@
 
         <!-- Overflow menu (PrimeVue Popover + Select) -->
         <ChatOverflowMenu
+          v-if="!embedded"
           :has-cwd="hasCwd"
           :show-directory="statusSlotInline"
           :cwd="currentConversation?.cwd || selectedCwd"
@@ -93,7 +94,10 @@
           <!-- empty state -->
           <div v-if="messages.length === 0" class="empty-state">
             <div class="empty-state-content">
-              <p class="text-base chat-welcome-text">
+              <p v-if="embedded" class="text-base chat-welcome-text">
+                Ask PressLTS to build, debug, or improve this plugin.
+              </p>
+              <p v-else class="text-base chat-welcome-text">
                 <template v-for="(part, i) in welcomeParts" :key="i">
                   <strong v-if="part === '{hostname}'">{{ hostname }}</strong>
                   <a
@@ -449,6 +453,7 @@
 </template>
 
 <script setup lang="ts">
+import { pluginStorageKey, shelleyURL } from "../../services/network";
 import { computed, nextTick, onMounted, onUnmounted, provide, reactive, ref, watch } from "vue";
 import Button from "primevue/button";
 import PvMessage from "primevue/message";
@@ -733,6 +738,17 @@ const readyModelIds = computed(() => models.value.filter((m) => m.ready).map((m)
 // only levels the target model accepts.
 const readyModels = computed(() => models.value.filter((m) => m.ready));
 
+function handleEmbeddedModelsChanged(event: Event) {
+  if (!embedded) return;
+  const detail = (event as CustomEvent<{ models?: typeof models.value; default_model?: string }>).detail;
+  if (!Array.isArray(detail?.models)) return;
+  models.value = detail.models;
+  if (window.__SHELLEY_INIT__) {
+    window.__SHELLEY_INIT__.models = detail.models;
+    window.__SHELLEY_INIT__.default_model = detail.default_model || "";
+  }
+}
+
 // Copy for the empty-model-list state. The server tells us WHY the list is
 // empty (missing exe.dev reflection/llm integration, or not on exe.dev at
 // all) so the advice names the right fix.
@@ -893,7 +909,7 @@ const selectedCwd = ref<string>("");
 const cwdInitialized = ref(false);
 function setSelectedCwd(cwd: string) {
   selectedCwd.value = cwd;
-  localStorage.setItem("shelley_selected_cwd", cwd);
+  localStorage.setItem(pluginStorageKey("shelley_selected_cwd"), cwd);
 }
 
 const cwdError = ref<string | null>(null);
@@ -1333,7 +1349,8 @@ provide(chunkMountKey, {
   revealTarget: revealChunkTarget,
 });
 
-const links = window.__SHELLEY_INIT__?.links || [];
+const embedded = Boolean(window.__SHELLEY_INIT__?.presslts_embedded);
+const links = embedded ? [] : window.__SHELLEY_INIT__?.links || [];
 const hostname = window.__SHELLEY_INIT__?.hostname || "localhost";
 
 // ---- tool overrides (persisted) ----
@@ -3205,7 +3222,7 @@ function focusOrOpenTerminal() {
   openInAppTerminal();
 }
 function openExport() {
-  window.open(`/export/${props.conversationId}`, "_blank", "noopener");
+  window.open(shelleyURL(`/export/${props.conversationId}`), "_blank", "noopener");
 }
 async function archiveFromMenu() {
   if (!props.conversationId || !props.onArchiveConversation) return;
@@ -3587,7 +3604,7 @@ watch(
   () => props.cwdSyncTrigger,
   (trigger) => {
     if (!trigger) return;
-    const stored = localStorage.getItem("shelley_selected_cwd");
+    const stored = localStorage.getItem(pluginStorageKey("shelley_selected_cwd"));
     if (stored) {
       selectedCwd.value = stored;
       cwdInitialized.value = true;
@@ -3600,7 +3617,7 @@ watch(
   [() => props.mostRecentCwd, cwdInitialized],
   () => {
     if (cwdInitialized.value) return;
-    const storedCwd = localStorage.getItem("shelley_selected_cwd");
+    const storedCwd = localStorage.getItem(pluginStorageKey("shelley_selected_cwd"));
     if (storedCwd) {
       selectedCwd.value = storedCwd;
       cwdInitialized.value = true;
@@ -3665,8 +3682,7 @@ watch(
 watch(
   readyModelIds,
   (ready) => {
-    if (!selectedModel.value) return;
-    if (ready.includes(selectedModel.value)) return;
+    if (selectedModel.value && ready.includes(selectedModel.value)) return;
     // Prefer the server's default (or any ready model) over showing nothing,
     // so a mere catalog reshuffle doesn't strand the composer.
     applyModel(pickReadyModel(models.value));
@@ -4564,6 +4580,7 @@ function handleScrollKeyDown(e: KeyboardEvent) {
 
 // ?diff=<hash> on mount opens the diff viewer for that commit.
 onMounted(() => {
+  window.addEventListener("shelley:models-changed", handleEmbeddedModelsChanged);
   const params = new URLSearchParams(window.location.search);
   const commit = params.get("diff");
   if (commit) {
@@ -4576,11 +4593,13 @@ onMounted(() => {
     params.delete("cwd");
     params.delete("file");
     const qs = params.toString();
-    window.history.replaceState(
-      {},
-      "",
-      `${window.location.pathname}${qs ? `?${qs}` : ""}${window.location.hash}`,
-    );
+    if (!window.__SHELLEY_INIT__?.presslts_embedded) {
+      window.history.replaceState(
+        {},
+        "",
+        `${window.location.pathname}${qs ? `?${qs}` : ""}${window.location.hash}`,
+      );
+    }
   }
 
   setupScrollObservers();
@@ -4592,6 +4611,7 @@ onMounted(() => {
 });
 
 onUnmounted(() => {
+  window.removeEventListener("shelley:models-changed", handleEmbeddedModelsChanged);
   teardownSubscriptions();
   stopBottomPin();
   tailSweepToken++; // cancel any in-flight background mount sweep

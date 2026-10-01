@@ -93,6 +93,9 @@
 import { computed, nextTick, ref, watch } from "vue";
 import Modal from "./Modal.vue";
 import { isImeComposing } from "../../utils/imeComposing";
+import { shelleyFetch } from "../../services/network";
+
+const fetch = shelleyFetch;
 
 interface GitRepoInfo {
   path: string;

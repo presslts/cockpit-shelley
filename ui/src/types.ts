@@ -188,7 +188,17 @@ export interface Link {
 export interface InitData {
   models: Model[];
   default_model: string;
-  default_cwd?: string;
+	default_cwd?: string;
+	// PressLTS embeds Shelley inside a plugin cockpit and uses this optional
+	// root to scope the conversation drawer to the active plugin workspace.
+	presslts_plugin_root?: string;
+	presslts_plugin_id?: string;
+	// Embedded PressLTS cockpits intentionally hide standalone Shelley actions
+	// that are already provided by the surrounding cockpit UI.
+	presslts_embedded?: boolean;
+	// When present, embedded Shelley resolves its own API, asset, and worker
+	// paths against this Core origin instead of the dashboard origin.
+	base_url?: string;
   home_dir?: string;
   hostname?: string;
   terminal_url?: string;

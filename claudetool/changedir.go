@@ -85,6 +85,12 @@ func (c *ChangeDirTool) run(ctx context.Context, req changeDirInput) llm.ToolOut
 		targetPath = filepath.Join(currentWD, targetPath)
 	}
 	targetPath = filepath.Clean(targetPath)
+	if root := os.Getenv("PRESSLTS_PLUGIN_ROOT"); root != "" {
+		resolved, err := filepath.EvalSymlinks(targetPath)
+		if err != nil || (resolved != root && !strings.HasPrefix(resolved, root+string(filepath.Separator))) {
+			return llm.ErrorfToolOut("directory is outside this plugin")
+		}
+	}
 
 	// Validate the directory exists
 	info, err := os.Stat(targetPath)

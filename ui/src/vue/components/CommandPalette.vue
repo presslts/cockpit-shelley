@@ -107,6 +107,7 @@
 </template>
 
 <script setup lang="ts">
+import { pluginStorageKey } from "../../services/network";
 import { computed, ref, watch } from "vue";
 import type { ConversationWithState } from "../../types";
 import type { Locale, TranslationKeys } from "../../i18n/types";
@@ -258,7 +259,7 @@ watch(
     }
     const cwd =
       props.currentConversation?.cwd ||
-      localStorage.getItem("shelley_selected_cwd") ||
+      localStorage.getItem(pluginStorageKey("shelley_selected_cwd")) ||
       window.__SHELLEY_INIT__?.default_cwd ||
       null;
     if (!cwd) return;
@@ -423,7 +424,7 @@ const actionItems = computed<CommandItem[]>(() => {
     keywords: ["file", "edit", "open", "find", "fuzzy", "finder", "editor", "path", "goto"],
   });
 
-  items.push({
+  if (!window.__SHELLEY_INIT__?.presslts_embedded) items.push({
     id: "manage-models",
     type: "action",
     title: t("addRemoveModelsKeys"),
@@ -518,7 +519,7 @@ const actionItems = computed<CommandItem[]>(() => {
     props.currentConversation?.git_worktree_root || newConvGitWorktreeRoot.value;
   const cwdNow =
     props.currentConversation?.cwd ||
-    localStorage.getItem("shelley_selected_cwd") ||
+    localStorage.getItem(pluginStorageKey("shelley_selected_cwd")) ||
     window.__SHELLEY_INIT__?.default_cwd ||
     null;
 

@@ -120,6 +120,9 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { useI18n } from "../composables/i18n";
+import { shelleyFetch } from "../../services/network";
+
+const fetch = shelleyFetch;
 
 type RecordingMode = "microphone" | "screen";
 type RecordingState = "starting" | "recording" | "stopping" | "error";

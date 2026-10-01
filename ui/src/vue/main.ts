@@ -23,6 +23,19 @@ initializeTheme();
 const rootContainer = document.getElementById("root");
 if (!rootContainer) throw new Error("Root container not found");
 
+// The PressLTS host passes the active plugin root on the embedded URL. Keep
+// Shelley's normal standalone startup untouched when the parameter is absent.
+const pressltsPluginRoot = new URLSearchParams(window.location.search).get("presslts_plugin_root");
+if (pressltsPluginRoot && window.__SHELLEY_INIT__) {
+  window.__SHELLEY_INIT__ = {
+    ...window.__SHELLEY_INIT__,
+    default_cwd: pressltsPluginRoot,
+    presslts_plugin_root: pressltsPluginRoot,
+    presslts_embedded: true,
+  };
+  document.documentElement.dataset.pressltsEmbedded = "true";
+}
+
 const primeVueOptions = {
   theme: {
     preset: ShelleyPreset,

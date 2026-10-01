@@ -1,0 +1,30 @@
+package main
+
+import (
+	"context"
+	"errors"
+	"net"
+	"net/http"
+	"os"
+)
+
+type cockpitTransport struct{ transport *http.Transport }
+
+func (transport cockpitTransport) RoundTrip(request *http.Request) (*http.Response, error) {
+	if request.URL.Host != "openrouter.ai" {
+		return nil, errors.New("network access outside model broker is disabled")
+	}
+	request = request.Clone(request.Context())
+	request.URL.Scheme = "http"
+	return transport.transport.RoundTrip(request)
+}
+
+func configureCockpitTransport() {
+	socket := os.Getenv("PRESSLTS_MODEL_SOCKET")
+	if socket == "" {
+		return
+	}
+	http.DefaultTransport = cockpitTransport{transport: &http.Transport{DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
+		return (&net.Dialer{}).DialContext(ctx, "unix", socket)
+	}}}
+}
