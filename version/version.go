@@ -52,11 +52,12 @@ func Capabilities() []string {
 
 // Info holds build information from runtime/debug.ReadBuildInfo
 type Info struct {
-	Version    string `json:"version,omitempty"`
-	Tag        string `json:"tag,omitempty"`
-	Commit     string `json:"commit,omitempty"`
-	CommitTime string `json:"commit_time,omitempty"`
-	Customized bool   `json:"customized,omitempty"`
+	Version               string `json:"version,omitempty"`
+	Tag                   string `json:"tag,omitempty"`
+	Commit                string `json:"commit,omitempty"`
+	CommitTime            string `json:"commit_time,omitempty"`
+	Customized            bool   `json:"customized,omitempty"`
+	CockpitLLMIntegration bool   `json:"cockpit_llm_integration"`
 }
 
 // GetInfo returns build information using runtime/debug.ReadBuildInfo,
@@ -75,9 +76,10 @@ func GetInfo() Info {
 	}
 
 	info := Info{
-		Version:    Version,
-		Tag:        tag,
-		Customized: customized,
+		Version:               Version,
+		Tag:                   tag,
+		Customized:            customized,
+		CockpitLLMIntegration: true,
 	}
 
 	buildInfo, ok := debug.ReadBuildInfo()

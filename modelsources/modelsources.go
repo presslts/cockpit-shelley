@@ -187,6 +187,12 @@ func Build(catalog []models.Model, sources []Source, httpc *http.Client, logger 
 			ids := integrationModelIDs(catalog, src.integration.Models, src.idSuffix, candidateCounts, reservedIDs, seen)
 			for i, m := range src.integration.Models {
 				id := ids[i]
+				// The cockpit broker supplies a workspace-filtered catalog. Its
+				// IDs remain stable when a key's integration is replaced, so saved
+				// conversations do not depend on credential source names.
+				if os.Getenv("PRESSLTS_MODEL_SOCKET") != "" {
+					id = m.ID
+				}
 				if m.ID == "" || seen[id] {
 					continue
 				}

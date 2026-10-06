@@ -1331,7 +1331,7 @@ func TestResponsesServiceReasoningEffort(t *testing.T) {
 
 			svc := &ResponsesService{
 				APIKey:          "k",
-				Model:           GPT41,
+				Model:           GPT55,
 				ModelURL:        server.URL,
 				ThinkingLevel:   tt.thinkingLevel,
 				ReasoningEffort: tt.reasoningEffort,
@@ -1376,8 +1376,8 @@ func TestResponsesServiceRequestLevelThinking(t *testing.T) {
 		wantEffort string
 	}{
 		{name: "req overrides svc default", svcLevel: llm.ThinkingLevelMedium, reqLevel: llm.ThinkingLevelHigh, wantEffort: "high"},
-		{name: "req off beats svc medium", svcLevel: llm.ThinkingLevelMedium, reqLevel: llm.ThinkingLevelOff, wantEffort: ""},
-		{name: "req off beats svc verbatim", svcLevel: llm.ThinkingLevelMedium, svcEffort: "xhigh", reqLevel: llm.ThinkingLevelOff, wantEffort: ""},
+		{name: "req off beats svc medium", svcLevel: llm.ThinkingLevelMedium, reqLevel: llm.ThinkingLevelOff, wantEffort: "none"},
+		{name: "req off beats svc verbatim", svcLevel: llm.ThinkingLevelMedium, svcEffort: "xhigh", reqLevel: llm.ThinkingLevelOff, wantEffort: "none"},
 		{name: "req default falls back to svc verbatim", svcLevel: llm.ThinkingLevelMedium, svcEffort: "xhigh", reqLevel: llm.ThinkingLevelDefault, wantEffort: "xhigh"},
 		{name: "req xhigh beats svc verbatim", svcLevel: llm.ThinkingLevelMedium, svcEffort: "verbatim", reqLevel: llm.ThinkingLevelXHigh, wantEffort: "xhigh"},
 	}
@@ -1404,7 +1404,7 @@ func TestResponsesServiceRequestLevelThinking(t *testing.T) {
 
 			svc := &ResponsesService{
 				APIKey:          "k",
-				Model:           GPT41,
+				Model:           GPT55,
 				ModelURL:        server.URL,
 				ThinkingLevel:   tt.svcLevel,
 				ReasoningEffort: tt.svcEffort,

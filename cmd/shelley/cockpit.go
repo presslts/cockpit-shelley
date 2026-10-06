@@ -6,12 +6,14 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"strings"
 )
 
 type cockpitTransport struct{ transport *http.Transport }
 
 func (transport cockpitTransport) RoundTrip(request *http.Request) (*http.Response, error) {
-	if request.URL.Host != "openrouter.ai" {
+	if request.URL.Scheme != "https" || (request.URL.Host != "reflection.int.exe.xyz" &&
+		(!strings.HasPrefix(request.URL.Host, "presslts-") || !strings.HasSuffix(request.URL.Host, ".int.exe.xyz"))) {
 		return nil, errors.New("network access outside model broker is disabled")
 	}
 	request = request.Clone(request.Context())

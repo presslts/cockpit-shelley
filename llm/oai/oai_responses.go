@@ -586,6 +586,14 @@ func (s *ResponsesService) MaxImageBytes() int {
 
 // Do sends a request to OpenAI using the Responses API.
 func (s *ResponsesService) Do(ctx context.Context, ir *llm.Request) (*llm.Response, error) {
+	// Non-reasoning models reject the service's historical medium default.
+	// Apply the model capability at the request boundary, for every source.
+	if !s.SupportsReasoning() {
+		cloned := *ir
+		cloned.ThinkingLevel = llm.ThinkingLevelOff
+		cloned.ReasoningEffort = ""
+		ir = &cloned
+	}
 	var err error
 	ir, err = llm.PrepareRequestCitations(ctx, ir, "openai-responses", s.adaptCitation)
 	if err != nil {
