@@ -267,3 +267,10 @@ if (failed > 0) {
   process.exit(1);
 }
 console.log(`${passed} passed`);
+
+for (const hint of [undefined, "exe_both_missing", "exe_llm_missing", "exe_reflection_missing", "exe_unknown", "add_model"]) {
+ const copy = modelSetupHintKeys(hint, true, true);
+ check("embedded setup has no exe.dev actions: " + hint, copy.actions.length === 0);
+ check("embedded setup points to PressLTS: " + hint, copy.noteText?.includes("PressLTS Settings") === true);
+ check("embedded setup does not include exe.dev notes: " + hint, copy.note === undefined && copy.footer === undefined);
+}

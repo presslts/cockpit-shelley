@@ -131,13 +131,14 @@
           </div>
         </div>
       </template>
-      <template v-if="catalogActions">
+      <template v-if="catalogActions || refreshAction">
         <div class="model-picker-divider" />
         <div class="model-picker-footer-row">
-          <button class="model-picker-manage" type="button" @click="handleManageModels">
+          <button v-if="catalogActions" class="model-picker-manage" type="button" @click="handleManageModels">
             {{ t("manageModelsAction") }}
           </button>
           <button
+            v-if="catalogActions || refreshAction"
             class="model-picker-refresh"
             type="button"
             :disabled="refreshing"
@@ -184,6 +185,7 @@ const props = withDefaults(
     /** Show the "Manage models…" / refresh footer. Off where the picker
      *  configures a one-shot action rather than the catalog. */
     catalogActions?: boolean;
+    refreshAction?: boolean;
     /** Portal the overlay to <body> so it isn't clipped by a scrollable
      *  ancestor (e.g. the version modal). */
     appendToBody?: boolean;
@@ -212,6 +214,7 @@ const props = withDefaults(
     disabled: false,
     refreshing: false,
     catalogActions: true,
+    refreshAction: false,
     inline: false,
     appendToBody: false,
     scrollHeight: "22rem",

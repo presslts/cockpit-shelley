@@ -137,7 +137,8 @@
               </p>
               <PvMessage v-if="models.length === 0" severity="warn" class="no-models-message">
                 <p class="no-models-title">{{ t(modelSetupHint.title) }}</p>
-                <p v-if="modelSetupHint.note">{{ t(modelSetupHint.note) }}</p>
+                <p v-if="modelSetupHint.noteText">{{ modelSetupHint.noteText }}</p>
+                <p v-else-if="modelSetupHint.note">{{ t(modelSetupHint.note) }}</p>
                 <!-- Render each remedy as the literal command it runs, so the
                      user can see what a click does (and copy it to a terminal
                      instead if they prefer). -->
@@ -756,6 +757,7 @@ const modelSetupHint = computed(() =>
   modelSetupHintKeys(
     window.__SHELLEY_INIT__?.model_setup_hint,
     window.__SHELLEY_INIT__?.is_exe_dev,
+    window.__SHELLEY_INIT__?.presslts_embedded,
   ),
 );
 
@@ -765,6 +767,7 @@ const modelSetupHint = computed(() =>
 // existing conversation the panel is hidden, so add the one-line note.
 function noModelErrorMessage(): string {
   const hint = modelSetupHint.value;
+  if (hint.noteText) return `${t(hint.title)}. ${hint.noteText}`;
   if (messages.value.length === 0 || !hint.note) return t(hint.title);
   return `${t(hint.title)}. ${t(hint.note)}`;
 }
