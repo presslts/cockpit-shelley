@@ -238,7 +238,7 @@ func (t *Transport) RoundTrip(req *http.Request) (*http.Response, error) {
 // enables prefix caching automatically for many other providers; session_id
 // keeps those requests on the same provider during a Shelley conversation.
 func prepareOpenRouterCaching(req *http.Request, conversationID string) error {
-	if req.URL.Hostname() != "openrouter.ai" || req.Method != http.MethodPost {
+	if (req.URL.Hostname() != "openrouter.ai" && ProviderFromContext(req.Context()) != "openrouter") || req.Method != http.MethodPost {
 		return nil
 	}
 	path := strings.TrimSuffix(req.URL.Path, "/")

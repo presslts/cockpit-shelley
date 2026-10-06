@@ -78,6 +78,7 @@
         :selected-model="selectedModel"
         :thinking-level="thinkingLevel"
         :catalog-actions="catalogActions"
+        refresh-action
         :disabled="sending"
         :refreshing="refreshingModels"
         @select-model="onSelectModel"

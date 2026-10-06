@@ -25,6 +25,7 @@ export interface ModelSetupAction {
 export interface ModelSetupHintCopy {
   title: TranslationKey;
   note?: TranslationKey;
+  noteText?: string;
   actions: ModelSetupAction[];
   footer?: TranslationKey;
 }
@@ -78,7 +79,12 @@ const LOCAL: ModelSetupHintCopy = {
 // empty later (integration detached, then Refresh). Without this an exe.dev
 // user would be told to add a model by hand instead of fixing the integration
 // that actually broke.
-export function modelSetupHintKeys(hint: string | undefined, onExeDev = false): ModelSetupHintCopy {
+export function modelSetupHintKeys(hint: string | undefined, onExeDev = false, embedded = false): ModelSetupHintCopy {
+  if (embedded) return {
+    title: "noModelsTitle",
+    noteText: "Connect an AI provider in PressLTS Settings. If already connected, retry or refresh models.",
+    actions: [],
+  };
   switch (hint) {
     case "exe_both_missing":
       // Neither source is reachable. Attaching llm alone restores models, so

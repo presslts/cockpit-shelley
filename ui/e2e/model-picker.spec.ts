@@ -1,4 +1,5 @@
 import { test, expect } from "@playwright/test";
+import { createConversationViaAPIWithDetails } from "./helpers";
 
 // The unified model + effort picker (ChatStatusContent -> ModelPicker.vue) is
 // built on PrimeVue <Select>. It renders on the new-conversation screen. Here
@@ -6,6 +7,70 @@ import { test, expect } from "@playwright/test";
 // reasoning-effort pill row, the pinned "Manage models…" footer action, and
 // persistence of the chosen model + effort to localStorage.
 test.describe("Model picker (PrimeVue)", () => {
+  test("embedded history remains readable with an empty picker and can refresh and send using the existing model", async ({ page, request }) => {
+    const conversation = await createConversationViaAPIWithDetails(request, "hello");
+    await page.addInitScript(() => {
+      let init: unknown;
+      Object.defineProperty(window, "__SHELLEY_INIT__", {
+        configurable: true,
+        get: () => init,
+        set: (value) => { init = { ...value, presslts_embedded: true, models: [], default_model: "" }; },
+      });
+    });
+    await page.route("**/api/models", route => route.fulfill({ json: [] }));
+    await page.goto(`/c/${conversation.slug}`);
+    await expect(page.locator(".messages-container")).toContainText("hello");
+    await page.route("**/api/models/refresh", route => route.fulfill({ json: [{
+      id: "predictable", display_name: "Refreshed integration model", ready: true,
+      is_default: true, supports_images: false, supports_reasoning: false,
+    }] }));
+    const picker = page.locator(".model-picker.p-select");
+    await expect(picker).toBeVisible();
+    await picker.click();
+    const panel = page.locator(".model-picker-panel");
+    await panel.getByRole("button", { name: "Refresh", exact: true }).click();
+    await expect(panel).toContainText("Refreshed integration model");
+    await panel.locator(".p-select-option").filter({ hasText: "Refreshed integration model" }).click();
+    await expect(panel).toBeHidden();
+    const input = page.getByTestId("message-input");
+    await input.fill("hello after refreshing the models");
+    const sent = page.waitForResponse(response => response.url().endsWith(`/api/conversation/${conversation.conversationId}/chat`) && response.request().method() === "POST");
+    await page.getByTestId("send-button").click();
+    expect((await sent).status()).toBe(202);
+    await expect(page.locator(".messages-container")).toContainText("hello after refreshing the models");
+    await expect(page.getByRole("dialog")).toHaveCount(0);
+    await expect(page.locator(".messages-container")).toContainText("hello");
+  });
+  test("embedded picker refreshes integration models without opening credential settings", async ({ page }) => {
+    await page.addInitScript(() => {
+      let init: unknown;
+      Object.defineProperty(window, "__SHELLEY_INIT__", {
+        configurable: true,
+        get: () => init,
+        set: (value) => { init = { ...value, presslts_embedded: true }; },
+      });
+    });
+    let refreshes = 0;
+    await page.route("**/api/models/refresh", async (route) => {
+      expect(route.request().method()).toBe("POST");
+      refreshes++;
+      await route.fulfill({ json: [{
+        id: "predictable", display_name: "Refreshed integration model", ready: true,
+        is_default: true, supports_images: false, supports_reasoning: false,
+      }] });
+    });
+    await page.goto("/new");
+    const picker = page.locator(".model-picker.p-select");
+    await expect(picker).toBeVisible();
+    await picker.click();
+    const panel = page.locator(".model-picker-panel");
+    await expect(panel.getByRole("button", { name: "Manage models…" })).toHaveCount(0);
+    await panel.getByRole("button", { name: "Refresh", exact: true }).click();
+    await expect(panel).toContainText("Refreshed integration model");
+    expect(refreshes).toBe(1);
+    await expect(page.getByRole("dialog")).toHaveCount(0);
+  });
+
   test("opens, lists models, selecting one persists, footer opens manage modal", async ({
     page,
   }) => {

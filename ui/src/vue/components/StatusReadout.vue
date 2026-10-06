@@ -48,7 +48,7 @@
       :agent-working="agentWorking"
     />
 
-    <template v-if="selectedModel">
+    <template v-if="selectedModel || !catalogActions">
       <span class="status-readout-sep" aria-hidden="true">·</span>
       <!-- Switching model rebuilds the conversation's loop, which cancels a
            running turn (ApplyModelSettings -> CancelConversation). Disable the
@@ -74,6 +74,7 @@
           :selected-model="selectedModel"
           :thinking-level="thinkingLevel"
           :catalog-actions="catalogActions"
+          refresh-action
           :disabled="agentWorking"
           :refreshing="refreshingModels"
           @select-model="onSwitchConversationModel"

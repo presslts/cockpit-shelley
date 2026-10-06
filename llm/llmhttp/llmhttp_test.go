@@ -67,6 +67,30 @@ func TestPrepareOpenRouterCachingForProviderFamilies(t *testing.T) {
 	}
 }
 
+func TestOpenRouterCachingThroughHostedIntegration(t *testing.T) {
+	for _, provider := range []string{"openrouter", "openai", "anthropic"} {
+		t.Run(provider, func(t *testing.T) {
+			ctx := WithProvider(t.Context(), provider)
+			request, err := http.NewRequestWithContext(ctx, "POST", "https://presslts-example.int.exe.xyz/v1/chat/completions", strings.NewReader(`{"model":"anthropic/claude-haiku-4.5","messages":[{"role":"user","content":"hello"}]}`))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := prepareOpenRouterCaching(request, "conversation-123"); err != nil {
+				t.Fatal(err)
+			}
+			var body map[string]any
+			if err := json.NewDecoder(request.Body).Decode(&body); err != nil {
+				t.Fatal(err)
+			}
+			_, session := body["session_id"]
+			_, hint := body["cache_control"]
+			if session != (provider == "openrouter") || hint != (provider == "openrouter") {
+				t.Fatalf("unexpected cache settings for %s", provider)
+			}
+		})
+	}
+}
+
 func requireIdleStall(t *testing.T, err error) llm.RequestErrorInfo {
 	t.Helper()
 	info, ok := llm.RequestErrorInfoFromError(err)

@@ -1127,7 +1127,7 @@ type chatCompletionStreamResponse struct {
 		} `json:"delta"`
 		FinishReason openai.FinishReason `json:"finish_reason"`
 	} `json:"choices"`
-	Usage *openai.Usage `json:"usage"`
+	Usage *chatCompletionUsage `json:"usage"`
 }
 
 func (s *Service) consumeChatCompletionStream(stream *openai.ChatCompletionStream, onStream func(llm.StreamDelta)) (*llm.Response, error) {
@@ -1137,7 +1137,7 @@ func (s *Service) consumeChatCompletionStream(stream *openai.ChatCompletionStrea
 		id           string
 		model        string
 		finishReason openai.FinishReason
-		usage        openai.Usage
+		usage        chatCompletionUsage
 		started      bool
 	)
 
@@ -1227,7 +1227,7 @@ func (s *Service) consumeChatCompletionStream(stream *openai.ChatCompletionStrea
 		Role:       toRoleFromString(msg.Role),
 		Content:    toLLMContents(msg),
 		StopReason: toStopReason(string(finishReason)),
-		Usage:      s.toLLMUsage(usage, headers),
+		Usage:      s.toLLMChatUsage(usage, headers),
 	}, nil
 }
 
@@ -1350,6 +1350,10 @@ func (s *Service) Do(ctx context.Context, ir *llm.Request) (*llm.Response, error
 		config.OrgID = s.Org
 	}
 	config.HTTPClient = httpc
+	var capturedUsage chatCompletionUsage
+	if s.ProviderName == "openrouter" && ir.OnStream == nil {
+		config.HTTPClient = chatUsageClient{base: httpc, usage: &capturedUsage}
+	}
 
 	client := openai.NewClientWithConfig(config)
 
@@ -1528,6 +1532,9 @@ func (s *Service) Do(ctx context.Context, ir *llm.Request) (*llm.Response, error
 			resp, err = client.CreateChatCompletion(ctx, req)
 			if err == nil {
 				result = s.toLLMResponse(&resp)
+				if s.ProviderName == "openrouter" {
+					result.Usage = s.toLLMChatUsage(capturedUsage, resp.Header())
+				}
 			}
 		}
 
