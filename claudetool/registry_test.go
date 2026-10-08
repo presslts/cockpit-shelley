@@ -104,3 +104,27 @@ func TestNewToolSetDisableAllTools(t *testing.T) {
 		t.Fatalf("expected only bash, got %v", names)
 	}
 }
+
+func TestCockpitToolDefaultsCanBeReenabled(t *testing.T) {
+	t.Setenv("PRESSLTS_PLUGIN_ROOT", t.TempDir())
+	for _, tool := range DefaultTools() {
+		want := tool.Name == "bash" || tool.Name == "patch" || tool.Name == "change_dir" || tool.Name == "read_image"
+		if tool.DefaultOn != want || IsToolEnabled(tool.Name, nil, false) != want {
+			t.Fatalf("unexpected cockpit default for %s", tool.Name)
+		}
+		if !IsToolEnabled(tool.Name, map[string]string{tool.Name: "on"}, false) {
+			t.Fatalf("cannot re-enable %s", tool.Name)
+		}
+	}
+	ts := NewToolSet(t.Context(), ToolSetConfig{})
+	defer ts.Cleanup()
+	for _, tool := range ts.Tools() {
+		if !IsToolEnabled(tool.Name, nil, false) {
+			t.Fatalf("disabled tool %s leaked into schema", tool.Name)
+		}
+	}
+	t.Setenv("PRESSLTS_PLUGIN_ROOT", "")
+	if !IsToolEnabled("subagent", nil, false) {
+		t.Fatal("cockpit defaults changed standalone defaults")
+	}
+}

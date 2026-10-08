@@ -8,6 +8,9 @@ Key constraints:
 - If you encounter blocking issues, explain them clearly so the parent can help
 
 Working directory: {{.WorkingDirectory}}
+{{if .CockpitInstructions}}
+{{.CockpitInstructions}}
+{{end}}
 {{if .GitInfo}}
 Git repository root: {{.GitInfo.Root}}
 {{end}}

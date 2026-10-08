@@ -1,6 +1,6 @@
 // Pure math for the token cost graph: turns a conversation's per-LLM-call
 // usage records into a stacked cumulative series, weighting each token type by
-// its models.dev price for the model that served the call.
+// its catalog price for the model that served the call.
 //
 // When no model in the conversation has known pricing, the series falls back
 // to raw token counts (weighted=false) so the graph still shows something.
@@ -30,7 +30,7 @@ export interface UsageEntry {
   turnStartTimestamp?: number;
 }
 
-/** models.dev pricing, USD per million tokens. */
+/** Catalog pricing, USD per million tokens. */
 export interface ModelCost {
   input: number;
   output: number;
@@ -88,6 +88,8 @@ export interface ModelUsage {
   /** Per-band tokens, unit price (USD/Mtok), cost, and segment color. */
   rows: { band: TokenBand; tokens: number; unitUsdPerMtok: number; cost: number; color: string }[];
   totalCost: number;
+  /** Reported cost when available, otherwise the catalog estimate. */
+  knownUsd: number;
   /** Provider-reported cost sum (gateway header); fallback when unpriced. */
   reportedUsd: number;
 }
@@ -115,6 +117,9 @@ export interface TokenCostStack {
   perModel: ModelUsage[];
   /** Sum of provider-reported cost_usd (0 if never reported). */
   reportedCostUsd: number;
+  knownUsd: number;
+  /** Calls with neither a reported cost nor catalog pricing. */
+  unpricedCalls: number;
 }
 
 export function buildTokenCostStack(
@@ -147,6 +152,7 @@ export function buildTokenCostStack(
         color: segmentColor(b, mi),
       })),
       totalCost: 0,
+      knownUsd: 0,
       reportedUsd: 0,
     });
     TOKEN_BANDS.forEach((band, b) => {
@@ -157,6 +163,8 @@ export function buildTokenCostStack(
   const layers: number[][] = segments.map(() => new Array(entries.length).fill(0));
   const running = new Array(segments.length).fill(0);
   let reportedCostUsd = 0;
+  let knownUsd = 0;
+  let unpricedCalls = 0;
 
   entries.forEach((e, i) => {
     const model = e.model || "unknown model";
@@ -165,14 +173,20 @@ export function buildTokenCostStack(
     const mu = perModel[mi];
     reportedCostUsd += e.cost_usd || 0;
     mu.reportedUsd += e.cost_usd || 0;
+    let estimatedUsd = 0;
     TOKEN_BANDS.forEach((band, b) => {
       const tokens = e[band.key] || 0;
       const usd = cost ? tokens * (cost[band.costKey] / 1e6) : 0;
       mu.rows[b].tokens += tokens;
       mu.rows[b].cost += usd;
       mu.totalCost += usd;
+      estimatedUsd += usd;
       running[mi * TOKEN_BANDS.length + b] += weighted ? usd : tokens;
     });
+    const callUsd = e.cost_usd > 0 ? e.cost_usd : estimatedUsd;
+    knownUsd += callUsd;
+    mu.knownUsd += callUsd;
+    if (!cost && !(e.cost_usd > 0)) unpricedCalls++;
     let acc = 0;
     for (let s = 0; s < segments.length; s++) {
       acc += running[s];
@@ -182,7 +196,17 @@ export function buildTokenCostStack(
 
   const n = entries.length;
   const maxY = n > 0 && segments.length > 0 ? layers[segments.length - 1][n - 1] : 0;
-  return { n, segments, layers, maxY, weighted, perModel, reportedCostUsd };
+  return {
+    n,
+    segments,
+    layers,
+    maxY,
+    weighted,
+    perModel,
+    reportedCostUsd,
+    knownUsd,
+    unpricedCalls,
+  };
 }
 
 /** One raw "other" (indirect) LLM usage entry as stored in a message's
@@ -225,7 +249,8 @@ export function aggregateOtherUsage(entries: OtherUsageEntry[]): OtherUsageRow[]
     const purpose = e.purpose || "";
     const model = e.model || "";
     const url = e.url || "";
-    const key = `${purpose}\x00${model}\x00${url}`;
+    // Keep calls with reported costs separate from calls needing estimates.
+    const key = `${purpose}\x00${model}\x00${url}\x00${(e.cost_usd || 0) > 0}`;
     let row = byKey.get(key);
     if (!row) {
       row = {
@@ -313,17 +338,19 @@ export function buildOtherUsageBreakdown(
     for (const band of TOKEN_BANDS) {
       const tokens = row[band.key] || 0;
       p.tokens += tokens;
-      if (cost) {
+      if (cost && !(row.cost_usd > 0)) {
         const usd = tokens * (cost[band.costKey] / 1e6);
         p.estimatedUsd += usd;
         totals.estimatedUsd += usd;
       }
     }
     if (!cost) {
-      p.priced = false;
       p.reportedUnpricedUsd += row.cost_usd || 0;
       totals.reportedUnpricedUsd += row.cost_usd || 0;
-      totals.unpricedCalls += row.llm_calls;
+      if (!(row.cost_usd > 0)) {
+        p.priced = false;
+        totals.unpricedCalls += row.llm_calls;
+      }
     }
     p.llmCalls += row.llm_calls;
     p.reportedUsd += row.cost_usd || 0;
@@ -335,7 +362,7 @@ export function buildOtherUsageBreakdown(
 
 export interface CostSummaryUsage {
   estimatedUsd: number;
-  reportedUnpricedUsd: number;
+  reportedUsd: number;
   unpricedCalls: number;
 }
 
@@ -361,8 +388,7 @@ export function buildCostSummary(
     conversationUnpricedCalls?: number;
   } = {},
 ): CostSummary {
-  const usageUsd = (part?: CostSummaryUsage) =>
-    part ? part.estimatedUsd + part.reportedUnpricedUsd : 0;
+  const usageUsd = (part?: CostSummaryUsage) => (part ? part.estimatedUsd + part.reportedUsd : 0);
   const otherUsd = usageUsd(usage.other);
   const subagentUsd = usageUsd(usage.subagents);
   const conversationUnpricedCalls = usage.conversationUnpricedCalls || 0;
@@ -383,6 +409,7 @@ export function buildCostSummary(
 /** "$0.0042", "$0.500", "$12.35" — enough precision for small costs. */
 export function formatUsd(v: number): string {
   if (v === 0) return "$0";
+  if (v > 0 && v < 0.0001) return "<$0.0001";
   if (v < 0.01) return `$${v.toFixed(4)}`;
   if (v < 1) return `$${v.toFixed(3)}`;
   if (v < 100) return `$${v.toFixed(2)}`;

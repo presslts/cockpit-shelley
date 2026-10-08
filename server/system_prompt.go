@@ -28,18 +28,22 @@ var systemPromptTemplate string
 //go:embed subagent_system_prompt.txt
 var subagentSystemPromptTemplate string
 
+//go:embed wordpress_system_prompt.txt
+var wordpressSystemPrompt string
+
 // SystemPromptData contains all the data needed to render the system prompt template
 type SystemPromptData struct {
-	WorkingDirectory string
-	GitInfo          *GitInfo
-	Codebase         *CodebaseInfo
-	IsExeDev         bool
-	IsSudoAvailable  bool
-	Hostname         string // For exe.dev, the public hostname (e.g., "vmname.exe.xyz")
-	DefaultPort      int    // For exe.dev, the auto-routed HTTP port, 0 if unknown
-	SkillsXML        string // XML block for available skills
-	Skills           []skills.Skill
-	UserEmail        string // The exe.dev auth email of the user, if known
+	WorkingDirectory    string
+	GitInfo             *GitInfo
+	Codebase            *CodebaseInfo
+	IsExeDev            bool
+	IsSudoAvailable     bool
+	Hostname            string // For exe.dev, the public hostname (e.g., "vmname.exe.xyz")
+	DefaultPort         int    // For exe.dev, the auto-routed HTTP port, 0 if unknown
+	SkillsXML           string // XML block for available skills
+	Skills              []skills.Skill
+	UserEmail           string // The exe.dev auth email of the user, if known
+	CockpitInstructions string
 }
 
 // DBPath is the path to the shelley database, set at startup
@@ -663,6 +667,9 @@ func collectSystemData(workingDir string, integrationSkills []skills.Skill) (*Sy
 	data := &SystemPromptData{
 		WorkingDirectory: wd,
 	}
+	if os.Getenv("PRESSLTS_PLUGIN_ROOT") != "" {
+		data.CockpitInstructions = wordpressSystemPrompt
+	}
 
 	// collectGitInfo shells out to `git rev-parse`; resolve it first so the
 	// codebase and skill walks below can scope to the git root.
@@ -946,7 +953,17 @@ func exeDevDefaultPortIn(env exeenv.Environment) int {
 // skills.ListAllWithIntegrations for precedence rules. Skills with a `when:`
 // clause are filtered against env.
 func collectSkills(workingDir, gitRoot string, integrationSkills []skills.Skill, env skills.Env) []skills.Skill {
-	return skills.Filter(skills.ListAllWithIntegrations(workingDir, gitRoot, integrationSkills), env)
+	found := skills.Filter(skills.ListAllWithIntegrations(workingDir, gitRoot, integrationSkills), env)
+	if os.Getenv("PRESSLTS_PLUGIN_ROOT") == "" {
+		return found
+	}
+	var enabled []skills.Skill
+	for _, skill := range found {
+		if skill.Origin != "Built into Shelley" || skill.Name == "previous-conversations" {
+			enabled = append(enabled, skill)
+		}
+	}
+	return enabled
 }
 
 // resolveAndNormalize returns a canonical lowercase path for dedup.
@@ -966,12 +983,13 @@ func isSudoAvailable() bool {
 
 // SubagentSystemPromptData contains data for subagent system prompts (minimal subset).
 type SubagentSystemPromptData struct {
-	WorkingDirectory string
-	GitInfo          *GitInfo
-	ShelleyDBPath    string
-	ConversationID   string // Parent conversation ID for querying user messages
-	SkillsXML        string // XML block for available skills
-	Skills           []skills.Skill
+	WorkingDirectory    string
+	GitInfo             *GitInfo
+	ShelleyDBPath       string
+	ConversationID      string // Parent conversation ID for querying user messages
+	SkillsXML           string // XML block for available skills
+	Skills              []skills.Skill
+	CockpitInstructions string
 }
 
 // GenerateSubagentSystemPrompt generates a minimal system prompt for subagent conversations.
@@ -998,6 +1016,9 @@ func generateSubagentSystemPromptWithIntegrationSkills(workingDir, parentConvers
 		WorkingDirectory: wd,
 		ShelleyDBPath:    DBPath,
 		ConversationID:   parentConversationID,
+	}
+	if os.Getenv("PRESSLTS_PLUGIN_ROOT") != "" {
+		data.CockpitInstructions = wordpressSystemPrompt
 	}
 
 	// Try to collect git info

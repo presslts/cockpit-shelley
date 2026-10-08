@@ -118,6 +118,8 @@ type Built struct {
 	// BaseURL is the resolved upstream base URL (after applying any source
 	// override on top of the catalog's DefaultBaseURL).
 	BaseURL string
+
+	ContextLimit int // advertised by an integration; zero when unavailable
 }
 
 // Config holds runtime configuration for the Manager. Built-in models
@@ -474,6 +476,7 @@ type serviceEntry struct {
 	apiType     APIType
 	// apiModelName is the wire model name used for models.dev lookups.
 	apiModelName string
+	contextLimit int
 }
 
 // ConfigInfo is an optional interface that services can implement to provide configuration details for logging
@@ -598,6 +601,7 @@ func (m *Manager) registerBuiltModelsLocked(built []Built) {
 			dn = b.ID
 		}
 		m.services[b.ID] = serviceEntry{
+			contextLimit: b.ContextLimit,
 			service:      b.Service,
 			provider:     b.Provider,
 			modelID:      b.ID,
@@ -740,6 +744,7 @@ type ModelInfo struct {
 	// APIModelName is the wire model name (e.g. "claude-opus-5"), for
 	// models.dev lookups.
 	APIModelName string
+	ContextLimit int
 }
 
 func (m *Manager) GetModelInfo(modelID string) *ModelInfo {
@@ -749,7 +754,7 @@ func (m *Manager) GetModelInfo(modelID string) *ModelInfo {
 	if !ok {
 		return nil
 	}
-	return &ModelInfo{DisplayName: entry.displayName, Provider: entry.provider, Tags: entry.tags, Source: entry.source, ReleaseDate: entry.releaseDate, BaseURL: entry.baseURL, APIType: string(entry.apiType), APIModelName: entry.apiModelName}
+	return &ModelInfo{ContextLimit: entry.contextLimit, DisplayName: entry.displayName, Provider: entry.provider, Tags: entry.tags, Source: entry.source, ReleaseDate: entry.releaseDate, BaseURL: entry.baseURL, APIType: string(entry.apiType), APIModelName: entry.apiModelName}
 }
 
 type reasoningMapping struct {

@@ -353,6 +353,7 @@ type ConversationListUpdate struct {
 type Server struct {
 	db                       *db.DB
 	llmManager               LLMProvider
+	pricingCatalog           *pricingCatalog
 	toolSetConfig            claudetool.ToolSetConfig
 	activeConversations      map[string]*ConversationManager
 	mu                       sync.Mutex
@@ -438,6 +439,9 @@ func NewServer(database *db.DB, llmManager LLMProvider, toolSetConfig claudetool
 		transcriptionJobs:     make(map[string]transcriptionJob),
 	}
 
+	if os.Getenv("PRESSLTS_PLUGIN_ROOT") != "" {
+		s.pricingCatalog = &pricingCatalog{}
+	}
 	s.conversationListStream = newConversationListStream(s)
 	s.streamPub = subpub.New[StreamResponse]()
 	s.conversationListGitCache = newConversationListGitCache()

@@ -940,7 +940,7 @@ export const featureFlagsApi = {
   },
 };
 
-// models.dev pricing, USD per million tokens. null = model known but unpriced.
+// Catalog pricing, USD per million tokens. null = pricing unknown.
 export interface ModelCostDTO {
   input: number;
   output: number;
@@ -948,28 +948,23 @@ export interface ModelCostDTO {
   cache_write: number;
 }
 
-// Module-level cache so reopening the context popup doesn't refetch.
-// Models whose fetch failed stay uncached and are retried next call.
-const modelCostCache = new Map<string, ModelCostDTO | null>();
+export interface ModelCostsDTO {
+  costs: Record<string, ModelCostDTO | null>;
+  source: string;
+  updated_at?: string;
+}
 
 export const modelCostsApi = {
-  async lookup(
-    models: { model: string; url: string }[],
-  ): Promise<Record<string, ModelCostDTO | null>> {
-    const missing = models.filter((m) => !modelCostCache.has(m.model));
-    if (missing.length > 0) {
-      const r = await fetch("/api/model-costs", {
-        method: "POST",
-        headers: { "Content-Type": "application/json", "X-Shelley-Request": "1" },
-        body: JSON.stringify({ models: missing }),
-      });
-      if (!r.ok) throw new Error(`Failed to load model costs: ${r.statusText}`);
-      const data = (await r.json()) as { costs: Record<string, ModelCostDTO | null> };
-      for (const m of missing) modelCostCache.set(m.model, data.costs[m.model] ?? null);
-    }
-    const out: Record<string, ModelCostDTO | null> = {};
-    for (const m of models) out[m.model] = modelCostCache.get(m.model) ?? null;
-    return out;
+  async lookup(models: { model: string; url: string }[]): Promise<ModelCostsDTO> {
+    // The server caches and refreshes the catalog. Do not retain rates or
+    // unknown models indefinitely in the browser.
+    const r = await fetch("/api/model-costs", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-Shelley-Request": "1" },
+      body: JSON.stringify({ models }),
+    });
+    if (!r.ok) throw new Error(`Failed to load model costs: ${r.statusText}`);
+    return (await r.json()) as ModelCostsDTO;
   },
 };
 

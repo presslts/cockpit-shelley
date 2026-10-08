@@ -379,14 +379,16 @@ func setupToolSetConfig(llmProvider claudetool.LLMServiceProvider, llmManager se
 	buildAvailableModels := func() []claudetool.AvailableModel {
 		availableIDs := llmManager.GetAvailableModels()
 		tiers := models.AssignTiers(availableIDs)
+		onlyFixture := len(availableIDs) == 1 && availableIDs[0] == "predictable"
 		var out []claudetool.AvailableModel
 		for _, id := range availableIDs {
+			if id == "predictable" && !onlyFixture {
+				continue
+			}
 			info := llmManager.GetModelInfo(id)
-			// Only surface tier-1 models to agents; tier-2 models are
-			// overshadowed by a better available sibling (see
-			// models.AssignTiers) or are unknown integration models and would
-			// just clutter the model enum. Explicit custom models stay visible.
-			if tiers[id] == models.Tier2 && (info == nil || info.Source != models.SourceCustomLabel) {
+			// Hide superseded catalog models, but keep newly discovered
+			// integration models and explicit custom models usable by tools.
+			if tiers[id] == models.Tier2 && (info == nil || (info.Source != models.SourceCustomLabel && models.ByID(id) != nil)) {
 				continue
 			}
 			am := claudetool.AvailableModel{ID: id}
@@ -551,8 +553,10 @@ func buildLLMModelSources(ctx context.Context, global GlobalConfig, config shell
 		sources = append(sources, modelsources.Env(anthropicKey, openAIKey, geminiKey, fireworksKey))
 	}
 
-	// 4. Predictable always available.
-	sources = append(sources, modelsources.Predictable())
+	// 4. Keep the test fixture out of customer cockpit sessions.
+	if os.Getenv("PRESSLTS_PLUGIN_ROOT") == "" || global.PredictableOnly {
+		sources = append(sources, modelsources.Predictable())
+	}
 	return defaultModel, sources
 }
 

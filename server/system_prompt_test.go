@@ -1,6 +1,7 @@
 package server
 
 import (
+	"bytes"
 	"io"
 	"net/http"
 	"os"
@@ -8,10 +9,53 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"text/template"
 
 	"shelley.exe.dev/exeenv"
 	"shelley.exe.dev/skills"
 )
+
+func TestCockpitPromptPreservesGuidanceAndDescribesTestingBoundary(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv("PRESSLTS_PLUGIN_ROOT", root)
+	if err := os.WriteFile(filepath.Join(root, "AGENTS.md"), []byte("Canonical plugin slug: test-plugin"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	data, err := collectSystemData(root, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	data.IsExeDev = true
+	data.GitInfo = &GitInfo{Root: root}
+	tmpl, err := template.New("prompt").Parse(systemPromptTemplate)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var output bytes.Buffer
+	if err := tmpl.Execute(&output, data); err != nil {
+		t.Fatal(err)
+	}
+	prompt := output.String()
+	for _, required := range []string{"Canonical plugin slug: test-plugin", "Preview uses saved files", "Checks runs on a committed Work version", "Do not create commits", "no outbound network"} {
+		if !strings.Contains(prompt, required) {
+			t.Errorf("missing %q", required)
+		}
+	}
+	for _, unwanted := range []string{"<systemd>", "<project_templates>", "Make commits with good messages", "request-integration", "customizing-shelley"} {
+		if strings.Contains(prompt, unwanted) {
+			t.Errorf("irrelevant instruction %q remains", unwanted)
+		}
+	}
+	for _, skill := range data.Skills {
+		if skill.Origin == "Built into Shelley" && skill.Name != "previous-conversations" {
+			t.Errorf("irrelevant builtin skill %s remains", skill.Name)
+		}
+	}
+	child, _, err := generateSubagentSystemPrompt(root, "parent")
+	if err != nil || !strings.Contains(child, "Preview uses saved files") {
+		t.Fatalf("child prompt lost testing boundary: %v", err)
+	}
+}
 
 func TestSystemPromptRequiresPublicVMServiceLinks(t *testing.T) {
 	if !strings.Contains(

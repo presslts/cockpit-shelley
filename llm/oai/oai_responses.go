@@ -217,7 +217,8 @@ type responsesUsage struct {
 }
 
 type responsesInputTokensDetails struct {
-	CachedTokens int `json:"cached_tokens"`
+	CachedTokens     int `json:"cached_tokens"`
+	CacheWriteTokens int `json:"cache_write_tokens"`
 }
 
 type responsesOutputTokensDetails struct {
@@ -511,22 +512,21 @@ func (s *ResponsesService) toLLMResponseFromResponses(resp *responsesResponse, h
 
 // toLLMUsageFromResponses converts Responses API usage to llm.Usage.
 //
-// OpenAI's Responses API reports input_tokens as the total input (including cached),
-// with input_tokens_details.cached_tokens as the cached subset.
+// The Responses API reports input_tokens as the total input (including cached).
 // Our Usage struct follows Anthropic's convention where InputTokens is the non-cached
 // portion and TotalInputTokens() = InputTokens + CacheCreationInputTokens + CacheReadInputTokens.
-// So we map: InputTokens = total - cached, CacheReadInputTokens = cached, CacheCreationInputTokens = 0.
 func (s *ResponsesService) toLLMUsageFromResponses(usage responsesUsage, headers http.Header) llm.Usage {
-	totalIn := uint64(usage.InputTokens)
-	var cached uint64
+	totalIn := uint64(max(usage.InputTokens, 0))
+	var cached, written uint64
 	if usage.InputTokensDetails != nil {
-		cached = uint64(usage.InputTokensDetails.CachedTokens)
+		cached = min(uint64(max(usage.InputTokensDetails.CachedTokens, 0)), totalIn)
+		written = min(uint64(max(usage.InputTokensDetails.CacheWriteTokens, 0)), totalIn-cached)
 	}
-	out := uint64(usage.OutputTokens)
 	u := llm.Usage{
-		InputTokens:          totalIn - cached,
-		CacheReadInputTokens: cached,
-		OutputTokens:         out,
+		InputTokens:              totalIn - cached - written,
+		CacheReadInputTokens:     cached,
+		CacheCreationInputTokens: written,
+		OutputTokens:             uint64(max(usage.OutputTokens, 0)),
 	}
 	u.CostUSD = llm.CostUSDFromResponse(headers)
 	return u

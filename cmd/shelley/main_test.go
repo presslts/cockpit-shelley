@@ -284,9 +284,9 @@ func TestBuildLLMConfigRejectsInvalidExeEnvironmentBeforeDiscovery(t *testing.T)
 	}
 }
 
-func TestToolModelsHideUnknownIntegrationModelsButKeepCustomModels(t *testing.T) {
+func TestToolModelsKeepNewIntegrationModelsAndExcludeFixture(t *testing.T) {
 	provider := &tieredModelProvider{
-		ids: []string{"gpt-5.6-sol", "upstream-only", "my-custom-model"},
+		ids: []string{"predictable", "gpt-5.6-sol", "upstream-only", "my-custom-model"},
 		infos: map[string]*models.ModelInfo{
 			"gpt-5.6-sol":     {Source: "llm.int.exe.xyz"},
 			"upstream-only":   {Source: "llm.int.exe.xyz"},
@@ -295,8 +295,27 @@ func TestToolModelsHideUnknownIntegrationModelsButKeepCustomModels(t *testing.T)
 	}
 
 	got := setupToolSetConfig(nil, provider, nil).BuildAvailableModels()
-	if len(got) != 2 || got[0].ID != "gpt-5.6-sol" || got[1].ID != "my-custom-model" {
-		t.Fatalf("available tool models = %+v, want known and custom models", got)
+	if len(got) != 3 || got[0].ID != "gpt-5.6-sol" || got[1].ID != "upstream-only" || got[2].ID != "my-custom-model" {
+		t.Fatalf("available tool models = %+v, want live models without test fixture", got)
+	}
+	provider.ids = []string{"predictable"}
+	got = setupToolSetConfig(nil, provider, nil).BuildAvailableModels()
+	if len(got) != 1 || got[0].ID != "predictable" {
+		t.Fatalf("fixture-only tool models = %+v", got)
+	}
+}
+
+func TestCockpitDoesNotExposeFixtureUnlessExplicitlyTesting(t *testing.T) {
+	t.Setenv("PRESSLTS_PLUGIN_ROOT", t.TempDir())
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	for _, predictableOnly := range []bool{false, true} {
+		cfg, err := buildLLMConfig(GlobalConfig{DisableLLMIntegration: true, DisableGateway: true, PredictableOnly: predictableOnly}, logger, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := findBuiltModelSource(cfg.Models, "predictable") != ""; got != predictableOnly {
+			t.Fatalf("predictable exposed = %v, test mode = %v", got, predictableOnly)
+		}
 	}
 }
 
