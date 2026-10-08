@@ -387,7 +387,7 @@ CROSS JOIN messages m INDEXED BY idx_messages_conversation_id
 CROSS JOIN json_each(m.other_usage_data) je
 WHERE m.conversation_id = d.conversation_id
   AND m.other_usage_data IS NOT NULL
-GROUP BY je.value ->> 'model', je.value ->> 'url'
+GROUP BY je.value ->> 'model', je.value ->> 'url', (COALESCE(je.value ->> 'cost_usd', 0) > 0)
 `
 
 type GetSubagentOtherUsageRow struct {
@@ -461,7 +461,7 @@ FROM descendants d
 CROSS JOIN messages m INDEXED BY idx_messages_conv_type_seq
 WHERE m.conversation_id = d.conversation_id
   AND m.type = 'agent' AND m.usage_data IS NOT NULL
-GROUP BY m.model_name, m.llm_api_url
+GROUP BY m.model_name, m.llm_api_url, (COALESCE(m.usage_data ->> 'cost_usd', 0) > 0)
 `
 
 type GetSubagentUsageRow struct {
@@ -481,6 +481,8 @@ type GetSubagentUsageRow struct {
 // CROSS JOIN keeps the small descendants set outermost. A regular JOIN lets
 // SQLite start from every agent message, which makes this query scan the full
 // messages table even when the conversation has no subagents.
+// Keep reported and unreported calls separate so a reported cost cannot
+// suppress estimates for other calls of the same model.
 func (q *Queries) GetSubagentUsage(ctx context.Context, parentConversationID *string) ([]GetSubagentUsageRow, error) {
 	rows, err := q.db.QueryContext(ctx, getSubagentUsage, parentConversationID)
 	if err != nil {

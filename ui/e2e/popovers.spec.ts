@@ -274,7 +274,7 @@ test.describe("Context usage popup", () => {
 
     const total = page.getByTestId("token-cost-total");
     await expect(total).toBeVisible();
-    await expect(total).toContainText("Total");
+    await expect(total).toContainText("Estimated total");
     await expect(total).toHaveCSS("border-top-style", "solid");
     const subagentCostBox = await subagentRow.locator(".token-cost-legend-cost").boundingBox();
     const totalCostBox = await total.locator(".token-cost-legend-cost").boundingBox();

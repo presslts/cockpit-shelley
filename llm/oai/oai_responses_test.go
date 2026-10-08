@@ -1276,7 +1276,7 @@ func TestResponsesServiceDoWithCaching(t *testing.T) {
 	if resp.Usage.CacheReadInputTokens != 80 {
 		t.Errorf("resp.Usage.CacheReadInputTokens = %d, expected 80", resp.Usage.CacheReadInputTokens)
 	}
-	// CacheCreationInputTokens should be 0 (OpenAI doesn't report this)
+	// CacheCreationInputTokens should be 0 when cache writes are not reported.
 	if resp.Usage.CacheCreationInputTokens != 0 {
 		t.Errorf("resp.Usage.CacheCreationInputTokens = %d, expected 0", resp.Usage.CacheCreationInputTokens)
 	}
@@ -1290,6 +1290,36 @@ func TestResponsesServiceDoWithCaching(t *testing.T) {
 	// ContextWindowUsed = 100 + 50 = 150
 	if resp.Usage.ContextWindowUsed() != 150 {
 		t.Errorf("resp.Usage.ContextWindowUsed() = %d, expected 150", resp.Usage.ContextWindowUsed())
+	}
+}
+
+func TestResponsesUsageAccounting(t *testing.T) {
+	tests := []struct {
+		name                       string
+		json                       string
+		input, read, write, output uint64
+	}{
+		{"cache writes", `{"input_tokens":100,"input_tokens_details":{"cached_tokens":60,"cache_write_tokens":30},"output_tokens":20}`, 10, 60, 30, 20},
+		{"uncached", `{"input_tokens":100,"output_tokens":20}`, 100, 0, 0, 20},
+		{"negative counters", `{"input_tokens":-1,"input_tokens_details":{"cached_tokens":-2,"cache_write_tokens":-3},"output_tokens":-4}`, 0, 0, 0, 0},
+		{"excess cached", `{"input_tokens":100,"input_tokens_details":{"cached_tokens":200,"cache_write_tokens":50}}`, 0, 100, 0, 0},
+		{"excess writes", `{"input_tokens":100,"input_tokens_details":{"cached_tokens":60,"cache_write_tokens":200}}`, 0, 60, 40, 0},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var usage responsesUsage
+			if err := json.Unmarshal([]byte(tt.json), &usage); err != nil {
+				t.Fatal(err)
+			}
+			headers := http.Header{"Exedev-Gateway-Cost": []string{"0.125"}}
+			got := (&ResponsesService{}).toLLMUsageFromResponses(usage, headers)
+			if got.InputTokens != tt.input || got.CacheReadInputTokens != tt.read || got.CacheCreationInputTokens != tt.write || got.OutputTokens != tt.output || got.CostUSD != 0.125 {
+				t.Fatalf("incorrect usage: %+v", got)
+			}
+			if got.TotalInputTokens() != uint64(max(usage.InputTokens, 0)) {
+				t.Fatalf("total input = %d, want %d", got.TotalInputTokens(), max(usage.InputTokens, 0))
+			}
+		})
 	}
 }
 

@@ -102,7 +102,7 @@
           <div class="token-cost-model-row">
             <span class="token-cost-model-name">{{ mu.model }}</span>
             <span v-if="mu.priced" class="token-cost-legend-cost">{{
-              formatUsd(mu.totalCost)
+              formatUsd(mu.knownUsd)
             }}</span>
             <span v-else-if="mu.reportedUsd > 0" class="token-cost-legend-cost">
               {{ formatUsd(mu.reportedUsd) }} reported
@@ -166,15 +166,19 @@
           class="token-cost-model-row token-cost-total-row"
           data-testid="token-cost-total"
         >
-          <span class="token-cost-model-name">Total</span>
-          <span class="token-cost-legend-cost">≈{{ formatUsd(costSummary.totalUsd) }}</span>
+          <span class="token-cost-model-name">{{
+            costSummary.unpricedCalls > 0 || subagentFetchFailed
+              ? "Known cost (partial)"
+              : "Estimated total"
+          }}</span>
+          <span class="token-cost-legend-cost">{{ formatUsd(costSummary.totalUsd) }}</span>
         </div>
       </div>
       <div v-if="stack.weighted && fetchFailed" class="token-cost-graph-note">
         Pricing lookup failed for some models.
       </div>
       <div v-if="stack.weighted && stack.reportedCostUsd > 0" class="token-cost-graph-note">
-        Provider-reported direct cost: {{ formatUsd(stack.reportedCostUsd) }}.
+        Reported costs take precedence in totals. The graph shows token cost estimates.
       </div>
       <div v-if="!stack.weighted" class="token-cost-graph-note">
         <template v-if="fetchFailed"> Pricing lookup failed — showing raw token counts. </template>
@@ -186,6 +190,17 @@
       </div>
     </template>
     <div v-else-if="!loading" class="token-cost-graph-note">No direct usage data yet.</div>
+    <div
+      v-if="pricingSource && !fetchFailed"
+      class="token-cost-graph-note"
+      :title="
+        pricingUpdatedAt
+          ? `Catalog fetched ${new Date(pricingUpdatedAt).toLocaleString()}`
+          : undefined
+      "
+    >
+      Estimates use current {{ pricingSource }} rates. Your provider's bill may differ.
+    </div>
     <div
       v-if="
         !loading &&
@@ -240,8 +255,12 @@
         class="token-cost-model-row token-cost-total-row"
         data-testid="token-cost-total"
       >
-        <span class="token-cost-model-name">Total</span>
-        <span class="token-cost-legend-cost">≈{{ formatUsd(costSummary.totalUsd) }}</span>
+        <span class="token-cost-model-name">{{
+          costSummary.unpricedCalls > 0 || subagentFetchFailed
+            ? "Known cost (partial)"
+            : "Estimated total"
+        }}</span>
+        <span class="token-cost-legend-cost">{{ formatUsd(costSummary.totalUsd) }}</span>
       </div>
     </div>
     <div v-if="!loading && subagentLoading" class="token-cost-graph-note">
@@ -312,6 +331,8 @@ const PADB = 18;
 const loading = ref(false);
 const fetchFailed = ref(false);
 const costs = ref<Record<string, ModelCostDTO | null>>({});
+const pricingSource = ref("");
+const pricingUpdatedAt = ref("");
 
 // "Other" (indirect) LLM usage — compaction, LLM-backed tools, slug
 // generation, … — arrives pre-aggregated via the otherUsageRows prop. It has
@@ -319,14 +340,15 @@ const costs = ref<Record<string, ModelCostDTO | null>>({});
 // breakdown and the note line; its models join the pricing batch below.
 
 // (model, url) pairs to price: the graph's entries plus other-usage models,
-// deduped by model name (first-seen URL wins).
+// Keep endpoint identity so ambiguous model names cannot inherit wrong rates.
 const distinctModels = computed(() => {
-  const seen = new Map<string, string>();
+  const seen = new Map<string, { model: string; url: string }>();
   for (const e of props.entries) {
-    if (e.model && !seen.has(e.model)) seen.set(e.model, e.url || "");
+    if (e.model) seen.set(`${e.model}\x00${e.url || ""}`, { model: e.model, url: e.url || "" });
   }
   for (const row of props.otherUsageRows ?? []) {
-    if (row.model && !seen.has(row.model)) seen.set(row.model, row.url || "");
+    if (row.model)
+      seen.set(`${row.model}\x00${row.url || ""}`, { model: row.model, url: row.url || "" });
   }
   return seen;
 });
@@ -344,15 +366,16 @@ watch(
     }
     loading.value = Object.keys(costs.value).length === 0;
     try {
-      const nextCosts = await modelCostsApi.lookup(
-        Array.from(models).map(([model, url]) => ({ model, url })),
-      );
+      const nextCosts = await modelCostsApi.lookup(Array.from(models.values()));
       if (request !== pricingRequest) return;
-      costs.value = nextCosts;
+      costs.value = nextCosts.costs;
+      pricingSource.value = nextCosts.source;
+      pricingUpdatedAt.value = nextCosts.updated_at || "";
       fetchFailed.value = false;
     } catch (e) {
       if (request !== pricingRequest) return;
       console.warn("model costs lookup failed", e);
+      costs.value = {};
       fetchFailed.value = true;
     } finally {
       if (request === pricingRequest) loading.value = false;
@@ -461,7 +484,7 @@ onBeforeUnmount(() => {
 
 const subagentKnownUsd = computed(() => {
   const sub = subagentUsage.value;
-  return sub ? sub.estimated_usd + sub.unpriced_reported_usd : 0;
+  return sub ? sub.estimated_usd + sub.reported_usd : 0;
 });
 
 const otherBreakdown = computed<OtherUsageBreakdown | null>(() => {
@@ -472,37 +495,30 @@ const otherBreakdown = computed<OtherUsageBreakdown | null>(() => {
 
 const otherKnownUsd = computed(() => {
   const totals = otherBreakdown.value?.totals;
-  return totals ? totals.estimatedUsd + totals.reportedUnpricedUsd : 0;
+  return totals ? totals.estimatedUsd + totals.reportedUsd : 0;
 });
 
 function otherPurposeKnownUsd(purpose: OtherPurposeUsage): number {
-  return purpose.estimatedUsd + purpose.reportedUnpricedUsd;
+  return purpose.estimatedUsd + purpose.reportedUsd;
 }
 
 const costSummary = computed(() => {
   const s = stack.value;
   const other = otherBreakdown.value?.totals;
   const subagents = subagentUsage.value;
-  const conversationUnpricedCalls = s
-    ? props.entries.filter((entry) => !entry.model || !costs.value[entry.model]).length
-    : 0;
-  const conversationUnpricedReportedUsd = s
-    ? s.perModel.filter((model) => !model.priced).reduce((sum, model) => sum + model.reportedUsd, 0)
-    : 0;
-  const conversationEstimatedUsd = s?.weighted ? s.maxY : 0;
-  return buildCostSummary(conversationEstimatedUsd + conversationUnpricedReportedUsd, {
-    conversationUnpricedCalls,
+  return buildCostSummary(s?.knownUsd || 0, {
+    conversationUnpricedCalls: s?.unpricedCalls || 0,
     other: other
       ? {
           estimatedUsd: other.estimatedUsd,
-          reportedUnpricedUsd: other.reportedUnpricedUsd,
+          reportedUsd: other.reportedUsd,
           unpricedCalls: other.unpricedCalls,
         }
       : undefined,
     subagents: subagents
       ? {
           estimatedUsd: subagents.estimated_usd,
-          reportedUnpricedUsd: subagents.unpriced_reported_usd,
+          reportedUsd: subagents.reported_usd,
           unpricedCalls: subagents.unpriced_calls,
         }
       : undefined,

@@ -2885,6 +2885,9 @@ func (s *Server) getModelList() []ModelInfo {
 				info.BaseURL = modelInfo.BaseURL
 				info.APIType = modelInfo.APIType
 				info.MaxContextTokens, _ = modelsdev.LookupContextLimit(modelInfo.BaseURL, modelInfo.APIModelName)
+				if modelInfo.ContextLimit > 0 {
+					info.MaxContextTokens = modelInfo.ContextLimit
+				}
 			}
 			modelList = append(modelList, info)
 		}
@@ -3005,7 +3008,7 @@ func (s *Server) handleTools(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]any{
-		"tools": claudetool.ToolRegistry,
+		"tools": claudetool.DefaultTools(),
 	})
 }
 

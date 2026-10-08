@@ -1,6 +1,10 @@
 package claudetool
 
-import "shelley.exe.dev/llm"
+import (
+	"os"
+
+	"shelley.exe.dev/llm"
+)
 
 // ToolInfo describes a tool available to conversations.
 type ToolInfo struct {
@@ -26,6 +30,20 @@ var ToolRegistry = []ToolInfo{
 	{Name: "llm_one_shot", Summary: "One-shot prompt to another LLM.", DefaultOn: true, SourcePath: "claudetool/llm_one_shot.go"},
 	{Name: "browser", Summary: "Browser automation (navigate, eval, screenshot, emulate, network, accessibility, profile).", DefaultOn: true, SourcePath: "claudetool/browse/browse.go"},
 	{Name: "read_image", Summary: "Read an image file for the model.", DefaultOn: true, SourcePath: "claudetool/browse/browse.go"},
+}
+
+// DefaultTools keeps optional cockpit tools available for explicit re-enabling.
+func DefaultTools() []ToolInfo {
+	tools := append([]ToolInfo(nil), ToolRegistry...)
+	if os.Getenv("PRESSLTS_PLUGIN_ROOT") != "" {
+		for i := range tools {
+			switch tools[i].Name {
+			case "keyword_search", "output_iframe", "subagent", "llm_one_shot", "browser":
+				tools[i].DefaultOn = false
+			}
+		}
+	}
+	return tools
 }
 
 // ToolInfoByName returns registry metadata for a tool.
@@ -54,7 +72,7 @@ func IsToolEnabled(name string, overrides map[string]string, disableAll bool) bo
 	if disableAll {
 		return false
 	}
-	for _, t := range ToolRegistry {
+	for _, t := range DefaultTools() {
 		if t.Name == name {
 			return t.DefaultOn
 		}

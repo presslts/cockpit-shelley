@@ -111,16 +111,16 @@ function entry(partial: Partial<UsageEntry>): UsageEntry {
     { purpose: "compaction", model: "haiku", input_tokens: 1 },
     { purpose: "slug", model: "opus", url: "https://x", output_tokens: 5, cost_usd: 0.02 },
   ]);
-  assert(rows.length === 3, "otherAgg: grouped by (purpose, model, url)");
+  assert(rows.length === 4, "otherAgg: reported and unreported calls remain separate");
   const comp = rows[0];
   assert(comp.purpose === "compaction" && comp.model === "opus", "otherAgg: first-seen order");
-  assert(comp.llm_calls === 2, "otherAgg: llm_calls counts entries");
-  assert(comp.input_tokens === 130, "otherAgg: input tokens summed");
-  assert(comp.cache_read_input_tokens === 7, "otherAgg: missing fields treated as 0");
+  assert(comp.llm_calls === 1, "otherAgg: llm_calls counts entries");
+  assert(comp.input_tokens === 100, "otherAgg: input tokens summed");
+  assert(rows[1].cache_read_input_tokens === 7, "otherAgg: missing fields treated as 0");
   assert(comp.output_tokens === 50, "otherAgg: output tokens summed");
   assert(approx(comp.cost_usd, 0.01), "otherAgg: reported cost summed");
-  assert(rows[1].model === "haiku" && rows[1].llm_calls === 1, "otherAgg: model splits rows");
-  assert(rows[2].purpose === "slug" && rows[2].url === "https://x", "otherAgg: url preserved");
+  assert(rows[2].model === "haiku" && rows[2].llm_calls === 1, "otherAgg: model splits rows");
+  assert(rows[3].purpose === "slug" && rows[3].url === "https://x", "otherAgg: url preserved");
   assert(aggregateOtherUsage([]).length === 0, "otherAgg: empty input");
 }
 
@@ -159,22 +159,22 @@ function entry(partial: Partial<UsageEntry>): UsageEntry {
   assert(slug.llmCalls === 7, "other: slug calls sum across models");
   assert(slug.tokens === 2_000_500, "other: slug tokens sum across models");
   // Only the priced model contributes: cacheRead $1.
-  assert(approx(slug.estimatedUsd, 1), "other: unpriced model adds $0");
-  assert(!slug.priced, "other: purpose with an unpriced model flagged");
+  assert(approx(slug.estimatedUsd, 0), "other: reported costs suppress catalog estimates");
+  assert(slug.priced, "other: reported cost covers an otherwise unpriced model");
   assert(approx(slug.reportedUsd, 0.35), "other: per-purpose reported cost sums");
   assert(
     approx(slug.reportedUnpricedUsd, 0.1),
     "other: reported cost from the unpriced model is isolated",
   );
   assert(compaction.reportedUsd === 0, "other: compaction has no reported cost");
-  assert(approx(b.totals.estimatedUsd, 8.5), "other: total estimate");
+  assert(approx(b.totals.estimatedUsd, 7.5), "other: total estimate");
   assert(approx(b.totals.reportedUsd, 0.35), "other: reported cost sums");
   assert(
     approx(b.totals.reportedUnpricedUsd, 0.1),
     "other: unpriced reported cost sums without priced calls",
   );
   assert(b.totals.llmCalls === 9, "other: total calls");
-  assert(b.totals.unpricedCalls === 4, "other: unpriced calls counted");
+  assert(b.totals.unpricedCalls === 0, "other: reported costs count as known");
 
   const empty = buildOtherUsageBreakdown([], {});
   assert(empty.perPurpose.length === 0 && empty.totals.llmCalls === 0, "other: empty rows");
@@ -185,8 +185,8 @@ function entry(partial: Partial<UsageEntry>): UsageEntry {
 // Shelley database.
 {
   const minikomi = buildCostSummary(132.619, {
-    other: { estimatedUsd: 1.895, reportedUnpricedUsd: 0, unpricedCalls: 0 },
-    subagents: { estimatedUsd: 55.161, reportedUnpricedUsd: 0, unpricedCalls: 0 },
+    other: { estimatedUsd: 1.895, reportedUsd: 0, unpricedCalls: 0 },
+    subagents: { estimatedUsd: 55.161, reportedUsd: 0, unpricedCalls: 0 },
   });
   assert(approx(minikomi.totalUsd, 189.675), "summary: total includes every bucket");
   assert(approx(minikomi.otherUsd, 1.895), "summary: other bucket retained");
@@ -194,8 +194,8 @@ function entry(partial: Partial<UsageEntry>): UsageEntry {
   assert(minikomi.unpricedCalls === 0, "summary: no unpriced calls");
 
   const mixedKnownCosts = buildCostSummary(21.051, {
-    other: { estimatedUsd: 1.5, reportedUnpricedUsd: 0.25, unpricedCalls: 2 },
-    subagents: { estimatedUsd: 968.721, reportedUnpricedUsd: 0.75, unpricedCalls: 3 },
+    other: { estimatedUsd: 1.5, reportedUsd: 0.25, unpricedCalls: 2 },
+    subagents: { estimatedUsd: 968.721, reportedUsd: 0.75, unpricedCalls: 3 },
   });
   assert(
     approx(mixedKnownCosts.totalUsd, 992.272),
@@ -211,7 +211,7 @@ function entry(partial: Partial<UsageEntry>): UsageEntry {
 
   const pricedSubagentsOnly = buildCostSummary(0, {
     conversationUnpricedCalls: 4,
-    subagents: { estimatedUsd: 12.5, reportedUnpricedUsd: 0, unpricedCalls: 0 },
+    subagents: { estimatedUsd: 12.5, reportedUsd: 0, unpricedCalls: 0 },
   });
   assert(
     approx(pricedSubagentsOnly.totalUsd, 12.5),
@@ -230,6 +230,34 @@ function entry(partial: Partial<UsageEntry>): UsageEntry {
   });
   assert(approx(s.reportedCostUsd, 0.75), "reported cost sums");
   assert(approx(s.perModel[0].reportedUsd, 0.75), "per-model reported cost sums");
+}
+
+// Reported and estimated calls of the same model must both contribute.
+{
+  const s = buildTokenCostStack(
+    [
+      entry({ input_tokens: 1_000_000, cost_usd: 1.25 }),
+      entry({ input_tokens: 1_000_000 }),
+      entry({ model: "unknown", input_tokens: 100, cost_usd: 0.75 }),
+      entry({ model: "missing", input_tokens: 100 }),
+    ],
+    { "claude-opus-4-6": opusCost },
+  );
+  assert(
+    approx(s.knownUsd, 7),
+    "known total prefers reported costs per call without dropping estimates",
+  );
+  assert(s.unpricedCalls === 1, "only calls lacking both sources are incomplete");
+  assert(approx(s.perModel[0].knownUsd, 6.25), "per-model known cost is correct");
+  const rows = aggregateOtherUsage([
+    { purpose: "compaction", model: "claude-opus-4-6", input_tokens: 1_000_000, cost_usd: 1.25 },
+    { purpose: "compaction", model: "claude-opus-4-6", input_tokens: 1_000_000 },
+  ]);
+  const other = buildOtherUsageBreakdown(rows, { "claude-opus-4-6": opusCost });
+  assert(
+    approx(other.totals.estimatedUsd + other.totals.reportedUsd, 6.25),
+    "mixed indirect costs do not double count",
+  );
 }
 
 // Empty input.
@@ -365,6 +393,7 @@ assert(formatDuration(11_100_000) === "3h 05m", "formatDuration hours");
 
 // Formatting.
 assert(formatUsd(0) === "$0", "formatUsd 0");
+assert(formatUsd(0.000001) === "<$0.0001", "positive costs never round to zero");
 assert(formatUsd(0.0042) === "$0.0042", "formatUsd small");
 assert(formatUsd(0.5) === "$0.500", "formatUsd sub-dollar");
 assert(formatUsd(12.345) === "$12.35", "formatUsd dollars");

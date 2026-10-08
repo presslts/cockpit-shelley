@@ -84,8 +84,10 @@ func TestSubagentUsageHandler(t *testing.T) {
 	}
 	// Parent usage must NOT be counted.
 	addUsage(parent.ConversationID, "claude-opus-4-6", "https://llm.int.exe.xyz/v1/messages", 1_000_000, 0, 0)
-	// Child: priced. 1M input @$5 + 1M output @$25 = $30.
+	// A reported cost takes precedence over the $30 catalog estimate.
 	addUsage(child.ConversationID, "claude-opus-4-6", "https://llm.int.exe.xyz/v1/messages", 1_000_000, 1_000_000, 1.25)
+	// Same model without a reported cost still needs its own $5 estimate.
+	addUsage(child.ConversationID, "claude-opus-4-6", "https://llm.int.exe.xyz/v1/messages", 1_000_000, 0, 0)
 	// Grandchild (recursive): unpriced model with provider-reported cost.
 	addUsage(grandchild.ConversationID, "mystery-model", "", 500, 500, 0.75)
 
@@ -106,11 +108,11 @@ func TestSubagentUsageHandler(t *testing.T) {
 	if err := json.Unmarshal(w.Body.Bytes(), &res); err != nil {
 		t.Fatal(err)
 	}
-	if res.LLMCalls != 2 {
-		t.Errorf("llm_calls = %d, want 2 (parent excluded, grandchild included)", res.LLMCalls)
+	if res.LLMCalls != 3 {
+		t.Errorf("llm_calls = %d, want 3 (parent excluded, grandchild included)", res.LLMCalls)
 	}
-	if res.EstimatedUsd < 29.99 || res.EstimatedUsd > 30.01 {
-		t.Errorf("estimated_usd = %v, want ~30", res.EstimatedUsd)
+	if res.EstimatedUsd != 5 {
+		t.Errorf("estimated_usd = %v, want 5 for the unreported call", res.EstimatedUsd)
 	}
 	if res.ReportedUsd != 2 {
 		t.Errorf("reported_usd = %v, want 2", res.ReportedUsd)
@@ -118,8 +120,8 @@ func TestSubagentUsageHandler(t *testing.T) {
 	if res.UnpricedReportedUsd != 0.75 {
 		t.Errorf("unpriced_reported_usd = %v, want 0.75", res.UnpricedReportedUsd)
 	}
-	if len(res.UnpricedModels) != 1 || res.UnpricedModels[0] != "mystery-model" || res.UnpricedCalls != 1 {
-		t.Errorf("unpriced = %v / %d calls, want [mystery-model] / 1", res.UnpricedModels, res.UnpricedCalls)
+	if len(res.UnpricedModels) != 0 || res.UnpricedCalls != 0 {
+		t.Errorf("unpriced = %v / %d calls, want none (reported costs cover the unknown model)", res.UnpricedModels, res.UnpricedCalls)
 	}
 
 	// A conversation with no subagents returns zeros.

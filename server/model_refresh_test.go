@@ -56,6 +56,7 @@ func TestHandleModelsReportsMaxContextTokens(t *testing.T) {
 		{ID: "sol", Provider: models.ProviderOpenAI, APIModelName: "gpt-5.6-sol", BaseURL: "https://api.openai.com", Service: predictable.NewService()},
 		{ID: "opus", Provider: models.ProviderAnthropic, APIModelName: "claude-opus-5", BaseURL: "https://llm.int.exe.xyz", Service: predictable.NewService()},
 		{ID: "mystery", Provider: models.ProviderBuiltIn, APIModelName: "not-in-models-dev", Service: predictable.NewService()},
+		{ID: "future", Provider: models.ProviderOpenAI, APIModelName: "not-in-models-dev", ContextLimit: 1_050_000, Service: predictable.NewService()},
 	}})
 	if err != nil {
 		t.Fatalf("NewManager failed: %v", err)
@@ -68,7 +69,7 @@ func TestHandleModelsReportsMaxContextTokens(t *testing.T) {
 	if err := json.NewDecoder(rec.Body).Decode(&got); err != nil {
 		t.Fatal(err)
 	}
-	want := map[string]int{"sol": 272000, "opus": 1000000, "mystery": 0}
+	want := map[string]int{"sol": 272000, "opus": 1000000, "mystery": 0, "future": 1_050_000}
 	for _, m := range got {
 		if m.MaxContextTokens != want[m.ID] {
 			t.Errorf("%s max_context_tokens = %d, want %d", m.ID, m.MaxContextTokens, want[m.ID])

@@ -17,7 +17,7 @@
       @show="onPopupShow"
       @hide="popupOpen = false"
     >
-      {{ formatTokenCount(contextWindowSize) }} tokens
+      {{ formatTokenCount(contextWindowSize) }} tokens in the latest context
       <div v-if="popupOpen" class="usage-graph-panel">
         <div
           :class="{ 'usage-graph-panel-item-inactive': usageGraph !== 'cost' }"
@@ -108,7 +108,7 @@ import UsageGraphSwitch from "./UsageGraphSwitch.vue";
 
 const props = defineProps<{
   contextWindowSize: number;
-  /** Model context window (models.dev, pricing-tier clamped); 0 when unknown.
+  /** Model context window from integration metadata or models.dev; 0 when unknown.
    *  Never displayed — only floors the warning color as the window fills. */
   maxContextTokens: number;
   conversationId?: string | null;

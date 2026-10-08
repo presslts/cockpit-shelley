@@ -211,6 +211,7 @@ func Build(catalog []models.Model, sources []Source, httpc *http.Client, logger 
 					APIType:      apiType,
 					BaseURL:      src.integration.URL,
 					APIModelName: m.apiModelName(),
+					ContextLimit: m.Limits.ContextWindow,
 				})
 				logger.Debug("Materialized integration model", "id", id, "source", src.label)
 			}
@@ -435,6 +436,9 @@ type IntegrationModel struct {
 	NativeID     string                       `json:"native_id,omitempty"`
 	APIs         []string                     `json:"apis,omitempty"`
 	Architecture IntegrationModelArchitecture `json:"architecture,omitempty"`
+	Limits       struct {
+		ContextWindow int `json:"context_window,omitempty"`
+	} `json:"limits,omitempty"`
 }
 
 type IntegrationModelArchitecture struct {

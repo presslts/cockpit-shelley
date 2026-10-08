@@ -3,8 +3,6 @@ package server
 import (
 	"encoding/json"
 	"net/http"
-
-	"shelley.exe.dev/models/modelsdev"
 )
 
 // handleModelCosts resolves pricing (USD per million tokens) for a batch of
@@ -12,28 +10,24 @@ import (
 // pricing map to null.
 func (s *Server) handleModelCosts(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		Models []struct {
-			Model string `json:"model"`
-			URL   string `json:"url"`
-		} `json:"models"`
+		Models []modelCostRequest `json:"models"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "Invalid request body", http.StatusBadRequest)
 		return
 	}
-	costs := make(map[string]*modelsdev.Cost, len(req.Models))
-	for _, m := range req.Models {
-		if m.Model == "" {
-			continue
-		}
-		if c, found := modelsdev.LookupCost(m.URL, m.Model); found {
-			costs[m.Model] = &c
-		} else {
-			costs[m.Model] = nil
-		}
+	costs, source, updatedAt, err := s.modelCosts(r.Context(), req.Models)
+	if err != nil {
+		s.logger.Warn("pricing catalog lookup failed", "error", err)
+		http.Error(w, "Pricing catalog unavailable; reported costs and token counts remain available", http.StatusServiceUnavailable)
+		return
 	}
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]any{"costs": costs})
+	response := map[string]any{"costs": costs, "source": source}
+	if !updatedAt.IsZero() {
+		response["updated_at"] = updatedAt
+	}
+	json.NewEncoder(w).Encode(response)
 }
 
 // handleSubagentUsage aggregates LLM usage across a conversation's subagents
@@ -60,16 +54,32 @@ func (s *Server) handleSubagentUsage(w http.ResponseWriter, r *http.Request, con
 		UnpricedCalls       int64    `json:"unpriced_calls"`
 	}
 	resp.UnpricedModels = []string{}
+	requests := make([]modelCostRequest, 0, len(rows)+len(otherRows))
+	for _, row := range rows {
+		if row.ModelName != nil && row.LlmApiUrl != nil {
+			requests = append(requests, modelCostRequest{Model: *row.ModelName, URL: *row.LlmApiUrl})
+		}
+	}
+	for _, row := range otherRows {
+		requests = append(requests, modelCostRequest{Model: row.ModelName, URL: row.LlmApiUrl})
+	}
+	costs, _, _, pricingErr := s.modelCosts(r.Context(), requests)
+	if pricingErr != nil {
+		s.logger.Warn("subagent pricing lookup failed", "error", pricingErr)
+	}
 	fold := func(model, url string, llmCalls, in, cacheWrite, cacheRead, out int64, costUsd float64) {
 		resp.LLMCalls += llmCalls
 		resp.ReportedUsd += costUsd
-		if c, found := modelsdev.LookupCost(url, model); found {
+		if costUsd > 0 {
+			if costs[model] == nil {
+				resp.UnpricedReportedUsd += costUsd
+			}
+		} else if c := costs[model]; c != nil {
 			resp.EstimatedUsd += float64(in)*c.Input/1e6 +
 				float64(cacheWrite)*c.CacheWrite/1e6 +
 				float64(cacheRead)*c.CacheRead/1e6 +
 				float64(out)*c.Output/1e6
 		} else {
-			resp.UnpricedReportedUsd += costUsd
 			resp.UnpricedModels = append(resp.UnpricedModels, model)
 			resp.UnpricedCalls += llmCalls
 		}

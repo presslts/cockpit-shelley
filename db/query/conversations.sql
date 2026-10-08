@@ -376,7 +376,9 @@ FROM descendants d
 CROSS JOIN messages m INDEXED BY idx_messages_conv_type_seq
 WHERE m.conversation_id = d.conversation_id
   AND m.type = 'agent' AND m.usage_data IS NOT NULL
-GROUP BY m.model_name, m.llm_api_url;
+-- Keep reported and unreported calls separate so a reported cost cannot
+-- suppress estimates for other calls of the same model.
+GROUP BY m.model_name, m.llm_api_url, (COALESCE(m.usage_data ->> 'cost_usd', 0) > 0);
 
 -- name: GetSubagentOtherUsage :many
 -- Aggregate indirect LLM usage (messages.other_usage_data entries) across all
@@ -407,7 +409,7 @@ WHERE m.conversation_id = d.conversation_id
   AND m.other_usage_data IS NOT NULL
 -- Group by the JSON expressions, not the aliases: bare model_name/llm_api_url
 -- would resolve to the messages table's own columns (NULL here).
-GROUP BY je.value ->> 'model', je.value ->> 'url';
+GROUP BY je.value ->> 'model', je.value ->> 'url', (COALESCE(je.value ->> 'cost_usd', 0) > 0);
 
 -- name: GetConversationBySlugAndParent :one
 SELECT * FROM conversations

@@ -12,8 +12,10 @@ import (
 type cockpitTransport struct{ transport *http.Transport }
 
 func (transport cockpitTransport) RoundTrip(request *http.Request) (*http.Response, error) {
+	pricing := request.Method == http.MethodGet && request.URL.Host == "exe.dev" &&
+		request.URL.Path == "/llm-gateway-models.json" && request.URL.RawQuery == ""
 	if request.URL.Scheme != "https" || (request.URL.Host != "reflection.int.exe.xyz" &&
-		(!strings.HasPrefix(request.URL.Host, "presslts-") || !strings.HasSuffix(request.URL.Host, ".int.exe.xyz"))) {
+		(!strings.HasPrefix(request.URL.Host, "presslts-") || !strings.HasSuffix(request.URL.Host, ".int.exe.xyz")) && !pricing) {
 		return nil, errors.New("network access outside model broker is disabled")
 	}
 	request = request.Clone(request.Context())

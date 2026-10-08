@@ -455,8 +455,12 @@ func TestLLMIntegrationModelsJSONIsAuthoritative(t *testing.T) {
 			{ID: "mistral/upstream-chat", Provider: "mistral", NativeID: "native-upstream-chat", APIs: []string{"openai_chat"}},
 		},
 	}
+	integ.Models[0].Limits.ContextWindow = 1_050_000
 
 	got := Build(models.All(), []Source{LLMIntegration(integ, "@llm2")}, &http.Client{}, nil)
+	if got[0].ContextLimit != 1_050_000 {
+		t.Fatalf("context limit = %d, want advertised 1050000", got[0].ContextLimit)
+	}
 	if len(got) != 3 {
 		t.Fatalf("built models = %+v, want exactly the three integration models", got)
 	}

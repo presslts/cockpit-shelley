@@ -95,7 +95,7 @@
           <div v-if="messages.length === 0" class="empty-state">
             <div class="empty-state-content">
               <p v-if="embedded" class="text-base chat-welcome-text">
-                Ask PressLTS to build, debug, or improve this plugin.
+                Describe what your WordPress plugin should do.
               </p>
               <p v-else class="text-base chat-welcome-text">
                 <template v-for="(part, i) in welcomeParts" :key="i">

@@ -88,8 +88,8 @@ func TestSubagentUsageIncludesOtherUsage(t *testing.T) {
 	if res.LLMCalls != 2 {
 		t.Errorf("llm_calls = %d, want 2 (1 message + 1 indirect)", res.LLMCalls)
 	}
-	if res.EstimatedUsd < 34.99 || res.EstimatedUsd > 35.01 {
-		t.Errorf("estimated_usd = %v, want ~35", res.EstimatedUsd)
+	if res.EstimatedUsd != 0 {
+		t.Errorf("estimated_usd = %v, want 0 because both calls have reported costs", res.EstimatedUsd)
 	}
 	if res.ReportedUsd != 2.0 {
 		t.Errorf("reported_usd = %v, want 2.0", res.ReportedUsd)

@@ -6,10 +6,15 @@ The user's exe.dev email is {{.UserEmail}}
 {{end}}
 {{if .GitInfo}}
 Git root: {{.GitInfo.Root}}
+{{if not .CockpitInstructions}}
 Make commits with good messages before returning to the user.
+{{end}}
 {{else}}Not in a git repository. For new projects, use git.
 {{end}}
-{{if .IsExeDev}}
+{{if .CockpitInstructions}}
+{{.CockpitInstructions}}
+{{end}}
+{{if and .IsExeDev (not .CockpitInstructions)}}
 <exe_dev>
 You are running on an exe.dev VM.
 You access services on http://localhost:<port>. The user (this VM's owner) accesses them via the exe.dev proxy: https://{{.Hostname}}/ for the default port ({{if .DefaultPort}}{{.DefaultPort}}{{else}}8000{{end}}), https://{{.Hostname}}:<port>/ for other ports in 3000-9999. The proxy authenticates the user, so the user can reach services even when you (running on the VM) can't.
@@ -56,4 +61,3 @@ Skills extend your capabilities. When a task matches a skill's description, acti
 {{.SkillsXML}}
 </skills>
 {{end}}
-
